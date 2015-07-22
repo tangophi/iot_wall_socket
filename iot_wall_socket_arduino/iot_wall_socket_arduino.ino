@@ -107,7 +107,7 @@ unsigned long zeroCrossCheckInterval    = 5000;
 unsigned long pirSensorCheckInterval    = 2000;
 unsigned long sendDataToESP8266Interval = 60000;
 unsigned long checkPowerUsageInterval   = 30000;
-unsigned long checkAlarmInterval        = 20000;
+unsigned long checkAlarmInterval        = 5000;
 unsigned long updateAlertInterval       = 600000;
 unsigned long checkFanInterval          = 600000;
 unsigned long checkLightInterval        = 10000;
@@ -642,26 +642,18 @@ void updatePowerData()
   }
 } 
 
-void drawAlarmImage()
-{
-  bmpDraw("alarm.bmp", 137, 115);
-}
-
 void updateAlarmStatus()
 {
-  tft.setTextSize(1);
-  tft.setTextColor(ILI9341_BLACK);  
-
   switch (alarmCurrentState)
   {
   case AlarmUnarmed:
-    tft.drawString("Unarmed", 138, 135, 2);
+    bmpDraw("alarm.bmp", 137, 115);
     break;
   case AlarmArming:
-    tft.drawString("Arming", 138, 135, 2);
+    bmpDraw("arming.bmp", 137, 115);
     break;
   case AlarmArmed:
-    tft.drawString("Armed", 138, 135, 2);
+    bmpDraw("armed.bmp", 137, 115);
     break;
   }
 } 
@@ -731,7 +723,6 @@ void setHomeScreen()
   drawFastFanSpeedButton();
   drawFanSpeed();
   drawPowerImage();
-  drawAlarmImage();
   updateAlarmStatus();
   drawLedStripImage(bLedOn);
 }
@@ -1731,8 +1722,6 @@ void loop()
         waitForIt(137, 115, 56, 56);
         keyPressTime = millis() - currentMillis;
 
-        // If fan is pressed for more than 2 seconds, open the fan options
-        // screen instead of toggling power to it.
         if (keyPressTime > 2000)
         {
           if (alarmCurrentState == AlarmUnarmed)
@@ -1757,7 +1746,6 @@ void loop()
         }
         else
         {
-          drawAlarmImage();
           updateAlarmStatus();
         }
       }        
@@ -2357,7 +2345,6 @@ void loop()
       // alarm status
       if (screenSelected == HomeScreen)
       {
-        drawAlarmImage();
         updateAlarmStatus();
       }
     }

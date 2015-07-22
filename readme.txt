@@ -28,3 +28,8 @@ v1.0 - July 20, 2015
 * Power consumption readings very erratic, probably due to noise in the circuit (relays may be the main culprit, they are not opto isolated)
 * Mood lighting works
 
+v1.1 - July 22, 2015
+====================
+* Changed how the security alarm logo is displayed.  Instead of a single image and writing "Unarmed", "Arming" or "Armed" over it as before, now different images will be displayed for Arming and Armed states.
+* Added two new bmp files, arming.bmp and armed.bmp, to the SD card.
+* Changed checkalarminterval from 20 seconds to 5 seconds, so that the beeps can be heard more prominently in AlarmArming and AlarmTriggered states.
