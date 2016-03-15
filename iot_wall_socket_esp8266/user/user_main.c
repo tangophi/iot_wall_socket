@@ -44,6 +44,7 @@ LOCAL char strTemperature[10] = "";
 LOCAL char strHumidity[10]    = "";
 LOCAL char strWatts[10]       = "";
 LOCAL int intLightState       = 0;
+LOCAL int intStartingState    = 0;
 LOCAL int intFanState         = 0;
 LOCAL int intFanSpeed         = 0;
 LOCAL int intLedState         = 0;
@@ -54,9 +55,16 @@ LOCAL int intFanCommand       = 0;
 LOCAL int intFanSpeedCommand  = 0;
 LOCAL int intLedCommand       = 0;
 LOCAL int intLedModeCommand   = 0;
+LOCAL int intLedSpeedCommand  = 0;
 LOCAL int intLedColorRed      = 0;
 LOCAL int intLedColorBlue     = 0;
 LOCAL int intLedColorGreen    = 0;
+
+LOCAL int intLedSpeedState         = 0;
+LOCAL int intLedModeState          = 0;
+LOCAL int intLedColorRedState      = 0;
+LOCAL int intLedColorBlueState     = 0;
+LOCAL int intLedColorGreenState    = 0;
 
 LOCAL int intTimestampHour    = 0;
 LOCAL int intTimestampMinute  = 0;
@@ -112,6 +120,10 @@ data_get(struct jsontree_context *js_ctx)
     {
         jsontree_write_int(js_ctx, intLedModeCommand);
     }
+    else if (os_strncmp(path, "LedSpeedCommand", 15) == 0)
+    {
+        jsontree_write_int(js_ctx, intLedSpeedCommand);
+    }
     else if (os_strncmp(path, "LedColorRed", 11) == 0)
     {
        jsontree_write_int(js_ctx, intLedColorRed);
@@ -157,22 +169,51 @@ data_set(struct jsontree_context *js_ctx, struct jsonparse_state *parser)
     while ((type = jsonparse_next(parser)) != 0) {
         if (type == JSON_TYPE_PAIR_NAME) {
 
-            if (jsonparse_strcmp_value(parser, "Temperature") == 0) {
+            if (jsonparse_strcmp_value(parser, "StateTemperature") == 0) {
             	jsonparse_next(parser);
             	jsonparse_next(parser);
                 jsonparse_copy_value(parser, strTemperature, 10);
 //                INFO("Temperature:%s:\n", strTemperature);
-            } else if (jsonparse_strcmp_value(parser, "Humidity") == 0) {
+
+            	os_bzero(str_buf, sizeof(str_buf));
+            	os_sprintf(str_buf,"%s", strTemperature);
+
+                oled_clear();
+            	OLED_Print(3, 6, "MQTT Sending...", 1);
+            	OLED_Print(1, 2, "/socket1/Temperature", 1);
+            	OLED_Print(5, 3, strTemperature, 1);
+            	MQTT_Publish(&mqttClient, "/socket1/StateTemperature", strTemperature, os_strlen(strTemperature), 2, 0);
+            }
+            else if (jsonparse_strcmp_value(parser, "StateHumidity") == 0) {
             	jsonparse_next(parser);
             	jsonparse_next(parser);
                 jsonparse_copy_value(parser, strHumidity, 10);
 //                INFO("Humidity:%s:\n", strHumidity);
-            } else if (jsonparse_strcmp_value(parser, "Watts") == 0) {
+
+            	os_bzero(str_buf, sizeof(str_buf));
+            	os_sprintf(str_buf,"%s", strHumidity);
+
+                oled_clear();
+            	OLED_Print(1, 4, "/socket1/Humidity", 1);
+            	OLED_Print(5, 5, strHumidity, 1);
+            	MQTT_Publish(&mqttClient, "/socket1/StateHumidity", strHumidity, os_strlen(strHumidity), 2, 0);
+            }
+            else if (jsonparse_strcmp_value(parser, "StateWatts") == 0) {
             	jsonparse_next(parser);
             	jsonparse_next(parser);
                 jsonparse_copy_value(parser, strWatts, 10);
 //                INFO("Watts:%s:\n", strWatts);
-            } else if (jsonparse_strcmp_value(parser, "LightState") == 0) {
+
+            	os_bzero(str_buf, sizeof(str_buf));
+            	os_sprintf(str_buf,"%s", strWatts);
+
+            	oled_clear();
+            	OLED_Print(3, 6, "MQTT Sending...", 1);
+            	OLED_Print(1, 2, "/socket1/Watts", 1);
+            	OLED_Print(5, 3, strWatts, 1);
+            	MQTT_Publish(&mqttClient, "/socket1/StateWatts", strWatts, os_strlen(strWatts), 2, 0);
+            }
+            else if (jsonparse_strcmp_value(parser, "ChangedLight") == 0) {
             	jsonparse_next(parser);
             	jsonparse_next(parser);
             	intLightState = jsonparse_get_value_as_int(parser);
@@ -183,11 +224,12 @@ data_set(struct jsontree_context *js_ctx, struct jsonparse_state *parser)
 
             	oled_clear();
     			OLED_Print(3, 6, "MQTT sending...", 1);
-    			OLED_Print(1, 2, "/socket1/LightState", 1);
+    			OLED_Print(1, 2, "/socket1/ChangedLight", 1);
     			OLED_Print(5, 3, str_buf, 1);
 
-            	MQTT_Publish(&mqttClient, "/socket1/LightState", str_buf, os_strlen(str_buf), 2, 0);
-            } else if (jsonparse_strcmp_value(parser, "FanState") == 0) {
+            	MQTT_Publish(&mqttClient, "/socket1/ChangedLight", str_buf, os_strlen(str_buf), 2, 0);
+            }
+            else if (jsonparse_strcmp_value(parser, "ChangedFan") == 0) {
             	jsonparse_next(parser);
             	jsonparse_next(parser);
             	intFanState = jsonparse_get_value_as_int(parser);
@@ -198,11 +240,12 @@ data_set(struct jsontree_context *js_ctx, struct jsonparse_state *parser)
 
             	oled_clear();
     			OLED_Print(3, 6, "MQTT sending...", 1);
-    			OLED_Print(1, 2, "/socket1/FanState", 1);
+    			OLED_Print(1, 2, "/socket1/ChangedFan", 1);
     			OLED_Print(5, 3, str_buf, 1);
 
-            	MQTT_Publish(&mqttClient, "/socket1/FanState", str_buf, os_strlen(str_buf), 2, 0);
-            } else if (jsonparse_strcmp_value(parser, "FanSpeed") == 0) {
+            	MQTT_Publish(&mqttClient, "/socket1/ChangedFan", str_buf, os_strlen(str_buf), 2, 0);
+            }
+            else if (jsonparse_strcmp_value(parser, "ChangedFanSpeed") == 0) {
             	jsonparse_next(parser);
             	jsonparse_next(parser);
             	intFanSpeed = jsonparse_get_value_as_int(parser);
@@ -213,11 +256,12 @@ data_set(struct jsontree_context *js_ctx, struct jsonparse_state *parser)
 
             	oled_clear();
     			OLED_Print(3, 6, "MQTT sending...", 1);
-    			OLED_Print(1, 2, "/socket1/FanSpeed", 1);
+    			OLED_Print(1, 2, "/socket1/ChangedFanSpeed", 1);
     			OLED_Print(5, 3, str_buf, 1);
 
-            	MQTT_Publish(&mqttClient, "/socket1/FanSpeed", str_buf, os_strlen(str_buf), 2, 0);
-            } else if (jsonparse_strcmp_value(parser, "LedState") == 0) {
+            	MQTT_Publish(&mqttClient, "/socket1/ChangedFanSpeed", str_buf, os_strlen(str_buf), 2, 0);
+            }
+            else if (jsonparse_strcmp_value(parser, "ChangedLed") == 0) {
             	jsonparse_next(parser);
             	jsonparse_next(parser);
             	intLedState = jsonparse_get_value_as_int(parser);
@@ -228,11 +272,180 @@ data_set(struct jsontree_context *js_ctx, struct jsonparse_state *parser)
 
             	oled_clear();
     			OLED_Print(3, 6, "MQTT sending...", 1);
-    			OLED_Print(1, 2, "/socket1/LedState", 1);
+    			OLED_Print(1, 2, "/socket1/ChangedLed", 1);
     			OLED_Print(5, 3, str_buf, 1);
 
-            	MQTT_Publish(&mqttClient, "/socket1/LedState", str_buf, os_strlen(str_buf), 2, 0);
-            } else if (jsonparse_strcmp_value(parser, "AlarmState") == 0) {
+            	MQTT_Publish(&mqttClient, "/socket1/ChangedLed", str_buf, os_strlen(str_buf), 2, 0);
+            }
+   	        else if (jsonparse_strcmp_value(parser, "ChangedLedMode") == 0) {
+   	            jsonparse_next(parser);
+   	            jsonparse_next(parser);
+               	intLedModeState = jsonparse_get_value_as_int(parser);
+               	os_bzero(str_buf, sizeof(str_buf));
+               	os_sprintf(str_buf,"%d", intLedModeState);
+               	MQTT_Publish(&mqttClient, "/socket1/ChangedLedMode", str_buf, os_strlen(str_buf), 2, 0);
+	        }
+  	        else if (jsonparse_strcmp_value(parser, "ChangedLedSpeed") == 0) {
+   	            jsonparse_next(parser);
+   	            jsonparse_next(parser);
+               	intLedSpeedState = jsonparse_get_value_as_int(parser);
+               	os_bzero(str_buf, sizeof(str_buf));
+               	os_sprintf(str_buf,"%d", intLedSpeedState);
+               	MQTT_Publish(&mqttClient, "/socket1/ChangedLedSpeed", str_buf, os_strlen(str_buf), 2, 0);
+	        }
+  	        else if (jsonparse_strcmp_value(parser, "ChangedLedColorRed") == 0) {
+   	            jsonparse_next(parser);
+   	            jsonparse_next(parser);
+               	intLedColorRedState = jsonparse_get_value_as_int(parser);
+               	os_bzero(str_buf, sizeof(str_buf));
+               	os_sprintf(str_buf,"%d", intLedColorRedState);
+               	MQTT_Publish(&mqttClient, "/socket1/ChangedLedColorRed", str_buf, os_strlen(str_buf), 2, 0);
+	        }
+  	        else if (jsonparse_strcmp_value(parser, "ChangedLedColorGreen") == 0) {
+   	            jsonparse_next(parser);
+   	            jsonparse_next(parser);
+               	intLedColorGreenState = jsonparse_get_value_as_int(parser);
+              	os_bzero(str_buf, sizeof(str_buf));
+              	os_sprintf(str_buf,"%d", intLedColorGreenState);
+               	MQTT_Publish(&mqttClient, "/socket1/ChangedLedColorGreen", str_buf, os_strlen(str_buf), 2, 0);
+	        }
+  	        else if (jsonparse_strcmp_value(parser, "ChangedLedColorBlue") == 0) {
+   	            jsonparse_next(parser);
+   	            jsonparse_next(parser);
+               	intLedColorBlueState = jsonparse_get_value_as_int(parser);
+               	os_bzero(str_buf, sizeof(str_buf));
+               	os_sprintf(str_buf,"%d", intLedColorBlueState);
+               	MQTT_Publish(&mqttClient, "/socket1/ChangedLedColorBlue", str_buf, os_strlen(str_buf), 2, 0);
+	        }
+            else if (jsonparse_strcmp_value(parser, "StateLight") == 0) {
+            	jsonparse_next(parser);
+            	jsonparse_next(parser);
+            	intLightState = jsonparse_get_value_as_int(parser);
+//            	INFO("LightState:%d:\n", intLightState);
+
+            	os_bzero(str_buf, sizeof(str_buf));
+            	os_sprintf(str_buf,"%d", intLightState);
+
+            	oled_clear();
+    			OLED_Print(3, 6, "MQTT sending...", 1);
+    			OLED_Print(1, 2, "/socket1/StateLight", 1);
+    			OLED_Print(5, 3, str_buf, 1);
+
+            	MQTT_Publish(&mqttClient, "/socket1/StateLight", str_buf, os_strlen(str_buf), 2, 0);
+            }
+            else if (jsonparse_strcmp_value(parser, "ArduinoStarting") == 0) {
+            	jsonparse_next(parser);
+            	jsonparse_next(parser);
+            	intStartingState = jsonparse_get_value_as_int(parser);
+
+            	os_bzero(str_buf, sizeof(str_buf));
+            	os_sprintf(str_buf,"1");
+
+            	MQTT_Publish(&mqttClient, "/socket1/ArduinoStarting", str_buf, os_strlen(str_buf), 2, 0);
+            }
+            else if (jsonparse_strcmp_value(parser, "StateFan") == 0) {
+            	jsonparse_next(parser);
+            	jsonparse_next(parser);
+            	intFanState = jsonparse_get_value_as_int(parser);
+//            	INFO("FanState:%d:\n", intFanState);
+
+            	os_bzero(str_buf, sizeof(str_buf));
+            	os_sprintf(str_buf,"%d", intFanState);
+
+            	oled_clear();
+    			OLED_Print(3, 6, "MQTT sending...", 1);
+    			OLED_Print(1, 2, "/socket1/StateFan", 1);
+    			OLED_Print(5, 3, str_buf, 1);
+
+            	MQTT_Publish(&mqttClient, "/socket1/StateFan", str_buf, os_strlen(str_buf), 2, 0);
+            }
+            else if (jsonparse_strcmp_value(parser, "StateFanSpeed") == 0) {
+            	jsonparse_next(parser);
+            	jsonparse_next(parser);
+            	intFanSpeed = jsonparse_get_value_as_int(parser);
+//            	INFO("FanSpeed:%d:\n", intFanSpeed);
+
+            	os_bzero(str_buf, sizeof(str_buf));
+            	os_sprintf(str_buf,"%d", intFanSpeed);
+
+            	oled_clear();
+    			OLED_Print(3, 6, "MQTT sending...", 1);
+    			OLED_Print(1, 2, "/socket1/StateFanSpeed", 1);
+    			OLED_Print(5, 3, str_buf, 1);
+
+            	MQTT_Publish(&mqttClient, "/socket1/StateFanSpeed", str_buf, os_strlen(str_buf), 2, 0);
+            }
+      	    else if (jsonparse_strcmp_value(parser, "StateLed") == 0) {
+            	jsonparse_next(parser);
+            	jsonparse_next(parser);
+            	intLedState = jsonparse_get_value_as_int(parser);
+//            	INFO("LedState:%d:\n", intLedState);
+
+            	os_bzero(str_buf, sizeof(str_buf));
+            	os_sprintf(str_buf,"%d", intLedState);
+
+            	oled_clear();
+    			OLED_Print(3, 6, "MQTT sending...", 1);
+    			OLED_Print(1, 2, "/socket1/StateLed", 1);
+    			OLED_Print(5, 3, str_buf, 1);
+
+            	MQTT_Publish(&mqttClient, "/socket1/StateLed", str_buf, os_strlen(str_buf), 2, 0);
+            }
+       	    else if (jsonparse_strcmp_value(parser, "StateLedMode") == 0) {
+       	        jsonparse_next(parser);
+       	        jsonparse_next(parser);
+               	intLedModeState = jsonparse_get_value_as_int(parser);
+
+               	os_bzero(str_buf, sizeof(str_buf));
+               	os_sprintf(str_buf,"%d", intLedModeState);
+
+               	oled_clear();
+    			OLED_Print(3, 6, "MQTT sending...", 1);
+    			OLED_Print(1, 2, "/socket1/StateLedMode", 1);
+    			OLED_Print(5, 3, str_buf, 1);
+
+               	MQTT_Publish(&mqttClient, "/socket1/StateLedMode", str_buf, os_strlen(str_buf), 2, 0);
+    	    }
+      	    else if (jsonparse_strcmp_value(parser, "StateLedSpeed") == 0) {
+       	        jsonparse_next(parser);
+       	        jsonparse_next(parser);
+               	intLedSpeedState = jsonparse_get_value_as_int(parser);
+
+               	os_bzero(str_buf, sizeof(str_buf));
+               	os_sprintf(str_buf,"%d", intLedSpeedState);
+
+               	oled_clear();
+    			OLED_Print(3, 6, "MQTT sending...", 1);
+    			OLED_Print(1, 2, "/socket1/StateLedSpeed", 1);
+    			OLED_Print(5, 3, str_buf, 1);
+
+               	MQTT_Publish(&mqttClient, "/socket1/StateLedSpeed", str_buf, os_strlen(str_buf), 2, 0);
+    	    }
+      	    else if (jsonparse_strcmp_value(parser, "StateLedColorRed") == 0) {
+       	        jsonparse_next(parser);
+       	        jsonparse_next(parser);
+               	intLedColorRedState = jsonparse_get_value_as_int(parser);
+               	os_bzero(str_buf, sizeof(str_buf));
+               	os_sprintf(str_buf,"%d", intLedColorRedState);
+               	MQTT_Publish(&mqttClient, "/socket1/StateLedColorRed", str_buf, os_strlen(str_buf), 2, 0);
+    	    }
+      	    else if (jsonparse_strcmp_value(parser, "StateLedColorGreen") == 0) {
+       	        jsonparse_next(parser);
+       	        jsonparse_next(parser);
+               	intLedColorGreenState = jsonparse_get_value_as_int(parser);
+              	os_bzero(str_buf, sizeof(str_buf));
+               	os_sprintf(str_buf,"%d", intLedColorGreenState);
+               	MQTT_Publish(&mqttClient, "/socket1/StateLedColorGreen", str_buf, os_strlen(str_buf), 2, 0);
+    	    }
+      	    else if (jsonparse_strcmp_value(parser, "StateLedColorBlue") == 0) {
+       	        jsonparse_next(parser);
+       	        jsonparse_next(parser);
+               	intLedColorBlueState = jsonparse_get_value_as_int(parser);
+              	os_bzero(str_buf, sizeof(str_buf));
+               	os_sprintf(str_buf,"%d", intLedColorBlueState);
+                MQTT_Publish(&mqttClient, "/socket1/StateLedColorBlue", str_buf, os_strlen(str_buf), 2, 0);
+            }
+      	    else if (jsonparse_strcmp_value(parser, "StateAlarm") == 0) {
             	jsonparse_next(parser);
             	jsonparse_next(parser);
                 jsonparse_copy_value(parser, strAlarmState, 20);
@@ -240,11 +453,12 @@ data_set(struct jsontree_context *js_ctx, struct jsonparse_state *parser)
 
             	oled_clear();
     			OLED_Print(3, 6, "MQTT sending...", 1);
-    			OLED_Print(1, 2, "/socket1/AlarmState", 1);
+    			OLED_Print(1, 2, "/socket1/StateAlarm", 1);
     			OLED_Print(2, 3, strAlarmState, 1);
 
-            	MQTT_Publish(&mqttClient, "/socket1/AlarmState", strAlarmState, os_strlen(strAlarmState), 2, 0);
-            } else if (jsonparse_strcmp_value(parser, "Backlight") == 0) {
+            	MQTT_Publish(&mqttClient, "/socket1/StateAlarm", strAlarmState, os_strlen(strAlarmState), 2, 0);
+            }
+      	    else if (jsonparse_strcmp_value(parser, "StateBacklight") == 0) {
             	jsonparse_next(parser);
             	jsonparse_next(parser);
             	intBacklight = jsonparse_get_value_as_int(parser);
@@ -279,7 +493,7 @@ LOCAL struct jsontree_callback data_callback =
 //                JSONTREE_PAIR("LedCommand", &data_callback));
 
 //JSONTREE_OBJECT(data_get_tree,
-//                JSONTREE_PAIR("EnvData", &get_data_tree));
+//                JSONTREE_PAIR("socket1", &get_data_tree));
 
 
 JSONTREE_OBJECT(get_light_command_data_tree,
@@ -292,6 +506,8 @@ JSONTREE_OBJECT(get_led_command_data_tree,
                 JSONTREE_PAIR("LedCommand", &data_callback));
 JSONTREE_OBJECT(get_led_mode_command_data_tree,
                 JSONTREE_PAIR("LedModeCommand", &data_callback));
+JSONTREE_OBJECT(get_led_speed_command_data_tree,
+                JSONTREE_PAIR("LedSpeedCommand", &data_callback));
 //JSONTREE_OBJECT(get_led_color_red_data_tree,
 //                JSONTREE_PAIR("LedColorRed", &data_callback));
 //JSONTREE_OBJECT(get_led_color_green_data_tree,
@@ -300,21 +516,23 @@ JSONTREE_OBJECT(get_led_mode_command_data_tree,
 //                JSONTREE_PAIR("LedColorBlue", &data_callback));
 
 JSONTREE_OBJECT(light_command_data_get_tree,
-                JSONTREE_PAIR("EnvData", &get_light_command_data_tree));
+                JSONTREE_PAIR("socket1", &get_light_command_data_tree));
 JSONTREE_OBJECT(fan_command_data_get_tree,
-                JSONTREE_PAIR("EnvData", &get_fan_command_data_tree));
+                JSONTREE_PAIR("socket1", &get_fan_command_data_tree));
 JSONTREE_OBJECT(fan_speed_command_data_get_tree,
-                JSONTREE_PAIR("EnvData", &get_fan_speed_command_data_tree));
+                JSONTREE_PAIR("socket1", &get_fan_speed_command_data_tree));
 JSONTREE_OBJECT(led_command_data_get_tree,
-                JSONTREE_PAIR("EnvData", &get_led_command_data_tree));
+                JSONTREE_PAIR("socket1", &get_led_command_data_tree));
 JSONTREE_OBJECT(led_mode_command_data_get_tree,
-                JSONTREE_PAIR("EnvData", &get_led_mode_command_data_tree));
+                JSONTREE_PAIR("socket1", &get_led_mode_command_data_tree));
+JSONTREE_OBJECT(led_speed_command_data_get_tree,
+                JSONTREE_PAIR("socket1", &get_led_speed_command_data_tree));
 //JSONTREE_OBJECT(led_color_red_data_get_tree,
-//                JSONTREE_PAIR("EnvData", &get_led_color_red_data_tree));
+//                JSONTREE_PAIR("socket1", &get_led_color_red_data_tree));
 //JSONTREE_OBJECT(led_color_green_data_get_tree,
-//                JSONTREE_PAIR("EnvData", &get_led_color_green_data_tree));
+//                JSONTREE_PAIR("socket1", &get_led_color_green_data_tree));
 //JSONTREE_OBJECT(led_color_blue_data_get_tree,
-//                JSONTREE_PAIR("EnvData", &get_led_color_blue_data_tree));
+//                JSONTREE_PAIR("socket1", &get_led_color_blue_data_tree));
 JSONTREE_OBJECT(led_color_command_data_get_tree,
                 JSONTREE_PAIR("LedColorRed",   &data_callback),
                 JSONTREE_PAIR("LedColorGreen", &data_callback),
@@ -327,38 +545,38 @@ JSONTREE_OBJECT(timestamp_command_data_get_tree,
 
 
 JSONTREE_OBJECT(set_data_tree,
-                JSONTREE_PAIR("Temperature", &data_callback),
-                JSONTREE_PAIR("Humidity", &data_callback),
-                JSONTREE_PAIR("Watts", &data_callback),
-                JSONTREE_PAIR("LightState", &data_callback),
-                JSONTREE_PAIR("FanState", &data_callback),
-                JSONTREE_PAIR("FanSpeed", &data_callback),
-                JSONTREE_PAIR("LedState", &data_callback),
-                JSONTREE_PAIR("AlarmState", &data_callback),
-                JSONTREE_PAIR("Backlight", &data_callback));
+                JSONTREE_PAIR("ChangedLight", &data_callback),
+                JSONTREE_PAIR("ChangedFan", &data_callback),
+                JSONTREE_PAIR("ChangedFanSpeed", &data_callback),
+                JSONTREE_PAIR("ChangedLed", &data_callback),
+				JSONTREE_PAIR("ChangedLedMode", &data_callback),
+				JSONTREE_PAIR("ChangedLedSpeed", &data_callback),
+				JSONTREE_PAIR("ChangedLedColorRed", &data_callback),
+				JSONTREE_PAIR("ChangedLedColorGreen", &data_callback),
+				JSONTREE_PAIR("ChangedLedColorBlue", &data_callback),
+                JSONTREE_PAIR("StateLight", &data_callback),
+                JSONTREE_PAIR("ArduinoStarting", &data_callback),
+                JSONTREE_PAIR("StateFan", &data_callback),
+                JSONTREE_PAIR("StateFanSpeed", &data_callback),
+                JSONTREE_PAIR("StateLed", &data_callback),
+				JSONTREE_PAIR("StateLedMode", &data_callback),
+				JSONTREE_PAIR("StateLedSpeed", &data_callback),
+				JSONTREE_PAIR("StateLedColorRed", &data_callback),
+				JSONTREE_PAIR("StateLedColorGreen", &data_callback),
+				JSONTREE_PAIR("StateLedColorBlue", &data_callback),
+                JSONTREE_PAIR("StateTemperature", &data_callback),
+                JSONTREE_PAIR("StateHumidity", &data_callback),
+                JSONTREE_PAIR("StateWatts", &data_callback),
+                JSONTREE_PAIR("StateAlarm", &data_callback),
+                JSONTREE_PAIR("StateBacklight", &data_callback));
 
 JSONTREE_OBJECT(data_set_tree,
-                JSONTREE_PAIR("EnvData", &set_data_tree));
+                JSONTREE_PAIR("socket1", &set_data_tree));
 
 
 
 LOCAL void ICACHE_FLASH_ATTR timer_callback(void *arg)
 {
-	oled_clear();
-	OLED_Print(3, 6, "MQTT Sending...", 1);
-	OLED_Print(1, 2, "/socket1/Temperature", 1);
-	OLED_Print(5, 3, strTemperature, 1);
-	MQTT_Publish(&mqttClient, "/socket1/Temperature", strTemperature, os_strlen(strTemperature), 2, 0);
-
-	OLED_Print(1, 4, "/socket1/Humidity", 1);
-	OLED_Print(5, 5, strHumidity, 1);
-	MQTT_Publish(&mqttClient, "/socket1/Humidity", strHumidity, os_strlen(strHumidity), 2, 0);
-
-	oled_clear();
-	OLED_Print(3, 6, "MQTT Sending...", 1);
-	OLED_Print(1, 2, "/socket1/Watts", 1);
-	OLED_Print(5, 3, strWatts, 1);
-	MQTT_Publish(&mqttClient, "/socket1/Watts", strWatts, os_strlen(strWatts), 2, 0);
 }
 
 void wifiConnectCb(uint8_t status)
@@ -387,8 +605,11 @@ void mqttConnectedCb(uint32_t *args)
 	MQTT_Subscribe(client,"/socket1/FanSpeedCommand",   2);
 	MQTT_Subscribe(client,"/socket1/LedCommand",        2);
 	MQTT_Subscribe(client,"/socket1/LedModeCommand",    2);
+	MQTT_Subscribe(client,"/socket1/LedSpeedCommand",   2);
 	MQTT_Subscribe(client,"/socket1/LedColorCommand",   2);
-	MQTT_Subscribe(client,"/socket1/TimestampCommand",  2);
+	MQTT_Subscribe(client,"/TimestampCommand",          2);
+
+    MQTT_Publish(&mqttClient, "/socket1/ESP8266Starting", "1", 1, 2, 0);
 }
 
 void mqttDisconnectedCb(uint32_t *args)
@@ -426,27 +647,32 @@ void mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const cha
 	if (os_strcmp(topicBuf, "/socket1/LightCommand") == 0)
 	{
 		intLightCommand = atoi(dataBuf);
-        json_ws_send((struct jsontree_value *)&light_command_data_get_tree, "EnvData", pbuf);
+        json_ws_send((struct jsontree_value *)&light_command_data_get_tree, "socket1", pbuf);
 	}
 	else if (os_strcmp(topicBuf, "/socket1/FanCommand") == 0)
     {
 		intFanCommand = atoi(dataBuf);
-        json_ws_send((struct jsontree_value *)&fan_command_data_get_tree, "EnvData", pbuf);
+        json_ws_send((struct jsontree_value *)&fan_command_data_get_tree, "socket1", pbuf);
 	}
 	else if (os_strcmp(topicBuf, "/socket1/FanSpeedCommand") == 0)
     {
 		intFanSpeedCommand = atoi(dataBuf);
-        json_ws_send((struct jsontree_value *)&fan_speed_command_data_get_tree, "EnvData", pbuf);
+        json_ws_send((struct jsontree_value *)&fan_speed_command_data_get_tree, "socket1", pbuf);
 	}
 	else if (os_strcmp(topicBuf, "/socket1/LedCommand") == 0)
     {
 		intLedCommand = atoi(dataBuf);
-        json_ws_send((struct jsontree_value *)&led_command_data_get_tree, "EnvData", pbuf);
+        json_ws_send((struct jsontree_value *)&led_command_data_get_tree, "socket1", pbuf);
 	}
 	else if (os_strcmp(topicBuf, "/socket1/LedModeCommand") == 0)
     {
 		intLedModeCommand = atoi(dataBuf);
-        json_ws_send((struct jsontree_value *)&led_mode_command_data_get_tree, "EnvData", pbuf);
+        json_ws_send((struct jsontree_value *)&led_mode_command_data_get_tree, "socket1", pbuf);
+	}
+	else if (os_strcmp(topicBuf, "/socket1/LedSpeedCommand") == 0)
+    {
+		intLedSpeedCommand = atoi(dataBuf);
+        json_ws_send((struct jsontree_value *)&led_speed_command_data_get_tree, "socket1", pbuf);
 	}
 	else if (os_strcmp(topicBuf, "/socket1/LedColorCommand") == 0)
     {
@@ -479,10 +705,10 @@ void mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const cha
 		}
 		if (n>=4)
 		{
-			json_ws_send((struct jsontree_value *)&led_color_command_data_get_tree, "EnvData", pbuf);
+			json_ws_send((struct jsontree_value *)&led_color_command_data_get_tree, "socket1", pbuf);
 		}
     }
-	else if (os_strcmp(topicBuf, "/socket1/TimestampCommand") == 0)
+	else if (os_strcmp(topicBuf, "/TimestampCommand") == 0)
 	{
 		char *p = dataBuf;
 		int n=0;
@@ -521,7 +747,7 @@ void mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const cha
 		}
 		if (n>=3)
 		{
-			json_ws_send((struct jsontree_value *)&timestamp_command_data_get_tree, "EnvData", pbuf);
+			json_ws_send((struct jsontree_value *)&timestamp_command_data_get_tree, "socket1", pbuf);
 		}
     }
 	// Send to Arduino as Json string
@@ -624,9 +850,9 @@ void user_init(void)
 	system_os_post(user_procTaskPrio, 0, 0 );
 
 	// Start a timer that calls timer_callback every DELAY milliseconds.
-	os_timer_disarm(&timer);
-	os_timer_setfn(&timer, (os_timer_func_t *)timer_callback, (void *)0);
-	os_timer_arm(&timer, DELAY, 1);
+//	os_timer_disarm(&timer);
+//	os_timer_setfn(&timer, (os_timer_func_t *)timer_callback, (void *)0);
+//	os_timer_arm(&timer, DELAY, 1);
 
 //	INFO("\r\nSystem started ...\r\n");
 }

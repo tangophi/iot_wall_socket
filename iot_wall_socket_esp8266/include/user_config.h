@@ -20,7 +20,7 @@
 #define MQTT_PASS			""
 
 #define STA_SSID "NiceMoose"
-#define STA_PASS "password"
+#define STA_PASS "NetgearW"
 
 #define STA_TYPE AUTH_WPA2_PSK
 

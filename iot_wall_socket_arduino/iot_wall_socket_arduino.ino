@@ -40,8 +40,10 @@
 #define TFT_DC             23
 #define TFT_CS             4
 #define TFT_BACKLIGHT      15
+
 Adafruit_ILI9341_AS tft = Adafruit_ILI9341_AS(TFT_CS, TFT_DC, 22);
 
+//UTouch myTouch(TCLK, TCS, TDIN, TDOUT, IRQ);
 //UTouch  myTouch( 20, 12, 16, 15, 2);
 UTouch  myTouch( 20, 12, 17, 16, 2);
 extern uint8_t SmallFont[];
@@ -56,44 +58,36 @@ EnergyMonitor emon1;                   // Create an instance
 
 DHT dht(PIN_DHT22, DHT22);
 
-float temperatureC=0, temperatureF=0, humidity=0;
-float heatIndexC=0, heatIndexF=0;
-float powerCurrent = 0, powerWatts = 0;
 
-int lightCommand=0, fanCommand=0;
-int fan_speed=4, prev_fan_speed=0;
+int intLightCommand=0, intFanCommand=0;
+int intFanSpeed=4, prev_intFanSpeed=0;
 
-boolean bLightOn=false, bFanOn=false, bPrevFanOn=false;
+boolean bLightOn=false, bFanOn=false;
 boolean bLightRelayActivated=false, bFanRelay1Activated=false, bFanRelay2Activated=false;
 volatile boolean bLightZeroCrossingDetected = false, bFanZeroCrossingDetected = false;
 
+float fanStopBelowTemperature = 25;
+int fanStartingSpeed = 0;
+float fanStartingTemperature = 0;
+unsigned long fanRunTime = 0;
 
-enum ledModes
-{
-  LedModeDefault=0,
-  LedModeRainbow,
-  LedModeCycle,
-  LedModeCycle2,
-  LedModeCycle3,
-  LedModeCycle4,
-  LedModeRandom,
-  LedModeRandom2,
-  LedModeRandomCycle,
-  LedModeRandomCycle2
-};
-ledModes ledMode = LedModeRainbow;
+float floatTemperatureC=0, floatTemperatureF=0, floatHumidity=0;
+float floatHeatIndexC=0, floatHeatIndexF=0;
+float floatPowerCurrent = 0, floatPowerWatts = 0;
+
 int ledCommand=0;
 boolean bLedOn = false;
 boolean bColorChanged = true;
+int intLedMode = 0;
+int intLedSpeed=0;
 int colorRed=0,colorGreen=0,colorBlue=255;
-int J=0,K=0,L=0,x=0,y=0,z=0, STEP=0;
-struct rgb
-{
-  int r;
-  int g;
-  int b;
-};
-rgb leds[LED_COUNT];
+int randr=0,randg=0,randb=0;
+int J=0,K=0,L=0,x=0,y=0,z=0, STEP=0, STEP2=0;
+
+boolean prev_bLedOn = false;
+int prev_intLedMode = 0;
+int prev_intLedSpeed = 0;
+int prev_colorRed=0,prev_colorGreen=0,prev_colorBlue=0;
 
 int count = 0;
 boolean bFirstTime = true;
@@ -101,11 +95,13 @@ unsigned long last_ir_cmd_received;
 int pir = 0, last_pir = 0;
 unsigned long noMotionDetectedTime      = 0;
 boolean bBacklightOn = true;
+boolean bBacklightEnabled = true;
+boolean bInitializeHomeScreen = true;
 
 unsigned long weatherUpdateInterval     = 30000;
 unsigned long zeroCrossCheckInterval    = 5000;
 unsigned long pirSensorCheckInterval    = 2000;
-unsigned long sendDataToESP8266Interval = 60000;
+unsigned long sendStatusInterval        = 6000;
 unsigned long checkPowerUsageInterval   = 30000;
 unsigned long checkAlarmInterval        = 5000;
 unsigned long updateAlertInterval       = 600000;
@@ -114,12 +110,13 @@ unsigned long checkLightInterval        = 10000;
 unsigned long ledUpdateInterval         = 500;
 unsigned long updateVarWindowInterval   = 20000;
 unsigned long updateClockInterval       = 40000;
-unsigned long updateBigClockInterval    = 10000;
+unsigned long updateBigClockInterval    = 30000;
+unsigned long saveEEPROMInterval        = 60000;
 
 unsigned long weatherUpdateTime     = 0;
 unsigned long zeroCrossCheckTime    = 0;
 unsigned long pirSensorCheckTime    = 0;
-unsigned long sendDataToESP8266Time = 0;
+unsigned long sendStatusTime        = 0;
 unsigned long checkPowerUsageTime   = 0;
 unsigned long checkAlarmTime        = 0;
 unsigned long updateAlertTime       = 0;
@@ -129,12 +126,67 @@ unsigned long ledUpdateTime         = 0;
 unsigned long updateVarWindowTime   = 0;
 unsigned long updateClockTime       = 0;
 unsigned long updateBigClockTime    = 0;
+unsigned long saveEEPROMTime        = 0;
 
 unsigned long previousMillis = 0, currentMillis = 0, elapsedMillis = 0;
 unsigned long previousMillisAlarm = 0, currentMillisAlarm = 0, elapsedMillisAlarm = 0;
 unsigned long previousMillisIntruderAlert = 0, currentMillisIntruderAlert = 0, elapsedMillisIntruderAlert = 0;
 unsigned long previousMillisFan = 0, currentMillisFan = 0, elapsedMillisFan = 0;
 unsigned long previousMillisMotion = 0, currentMillisMotion = 0, elapsedMillisMotion = 0;
+
+
+int PIN = 1234;
+int currentPIN = 0;
+
+int intTimeHour                         = 0;
+int intTimeMinute                       = 0;
+int intTimePM                           = 0;
+int intTimeAlarmHour                    = 0;
+int intTimeAlarmMinute                  = 0;
+boolean bTimeAlarmEnabled               = false;
+boolean bTimeAlarmTriggered             = false;
+boolean bTimeAlarmTriggeredExtraActions = false;
+boolean bBigClockShow                   = false;
+
+boolean bDebugOn       = false;
+boolean bStarted       = false;
+int intStatusField     = 1;
+
+
+enum ledModes
+{
+  LedModeDefault=0,
+  LedModeNegative,
+  LedModeFade,
+  LedModeRainbow,
+  LedModeCycle,
+  LedModeCycle2,    // 5
+  LedModeCycle3,
+  LedModeCycle4,
+  LedModeRandom,
+  LedModeRandom2,
+  LedModeRandomCycle,  // 10
+  LedModeRandomCycle2,
+  LedModeStrobe,
+  LedModeStrobeRandom,
+  LedModeStrobeStep,
+  LedModeStrobeStep2,       // 15
+  LedModeStrobeStepRandom, 
+  LedModeStrobeStepRandom2,
+  LedModeLarsonScanner,
+  LedModeLarsonScannerRandom  //19
+};
+
+ledModes ledMode = LedModeDefault;
+
+struct rgb
+{
+  int r;
+  int g;
+  int b;
+};
+
+rgb leds[LED_COUNT];
 
 enum screens
 {
@@ -146,22 +198,18 @@ enum screens
   BigClockScreen
 };
 screens screenSelected = HomeScreen;
-boolean bInitializeHomeScreen = true;
 
 enum fanOptions
 {
   Decrease1StepFor1DegreeDrop,
   Decrease1StepFor2DegreesDrop,
-  Decrease1StepEvery90Mins,
   Decrease1StepEvery120Mins,
+  Decrease1StepEvery180Mins,
   StopIfBelow,
   noFanOptionSelected
 };
+
 fanOptions fanOptionSelected = noFanOptionSelected;
-float fanStopBelowTemperature = 25;
-int fanStartingSpeed = 0;
-float fanStartingTemperature = 0;
-unsigned long fanRunTime = 0;
 
 enum lightOptions
 {
@@ -169,6 +217,7 @@ enum lightOptions
   LightSwitchOffIfNoMotionFor2Mins,
   noLightOptionSelected
 };
+
 lightOptions lightOptionSelected = noLightOptionSelected;
 
 enum alarmStates
@@ -178,6 +227,7 @@ enum alarmStates
   AlarmArmed,
   AlarmTriggered
 };
+
 alarmStates alarmCurrentState = AlarmUnarmed;
 alarmStates alarmLastState = AlarmUnarmed;
 unsigned long alarmTimeElapsedAfterArming = 0;
@@ -205,19 +255,6 @@ enum timeLightOptions
 
 timeLightOptions timeLightOptionSelected = TimeAlarmOptionLightNone;
 
-int PIN = 1234;
-int currentPIN = 0;
-
-int intTimeHour                         = 0;
-int intTimeMinute                       = 0;
-int intTimePM                           = 0;
-int intTimeAlarmHour                    = 0;
-int intTimeAlarmMinute                  = 0;
-boolean bTimeAlarmEnabled               = false;
-boolean bTimeAlarmTriggered             = false;
-boolean bTimeAlarmTriggeredExtraActions = false;
-boolean bBigClockShow                   = false;
-
 typedef enum 
 {
   DebugVariables,
@@ -230,7 +267,21 @@ typedef enum
 }
 debugTypes_t;
 
-boolean bDebugOn = false;
+void initGlobals()
+{
+  randr=random(256);
+  randg=random(256);
+  randb=random(256);
+  J=0;
+  K=0;
+  L=0;
+  x=0;
+  y=0;
+  z=0;
+  STEP=0;
+  STEP2=0;
+}
+
 
 void buzz(long frequency, long length) {
   long delayValue = 1000000/frequency/2; // calculate the delay value between transitions
@@ -451,7 +502,7 @@ void drawFanSpeed()
     tft.fillRect(197,109,35,51,BLACK);
     tft.setTextSize(1);
     tft.setTextColor(ILI9341_RED);  
-    tft.drawNumber(fan_speed, 198, 111, 7);
+    tft.drawNumber(intFanSpeed, 198, 111, 7);
   }
 }
 
@@ -501,35 +552,35 @@ void updateWeatherData()
 
     // Compute heat index
     // Must send in temp in Fahrenheit!
-    heatIndexF = dht.computeHeatIndex(f, h);
-    heatIndexC = (heatIndexF - 32)*5/9;
+    floatHeatIndexF = dht.computeHeatIndex(f, h);
+    floatHeatIndexC = (floatHeatIndexF - 32)*5/9;
 
-    temperatureC = t;
-    temperatureF = f;
-    humidity     = h;
+    floatTemperatureC = t;
+    floatTemperatureF = f;
+    floatHumidity     = h;
 
     /*
     Serial.print("Celsius=");
-    Serial.println(temperatureC);
-    Serial.print("Fahrenheit=");
-    Serial.println(temperatureF);
-    Serial.print("Humidity=");
-    Serial.println(humidity);
-    Serial.print("HeatIndexC=");
-    Serial.println(heatIndexC);
-    Serial.print("HeatIndexF=");
-    Serial.println(heatIndexF);
-    */
+     Serial.println(floatTemperatureC);
+     Serial.print("Fahrenheit=");
+     Serial.println(floatTemperatureF);
+     Serial.print("Humidity=");
+     Serial.println(floatHumidity);
+     Serial.print("HeatIndexC=");
+     Serial.println(floatHeatIndexC);
+     Serial.print("HeatIndexF=");
+     Serial.println(floatHeatIndexF);
+     */
 
     tft.setTextSize(1);
     tft.fillRect(40,0,150,110,BLACK);
     tft.fillRect(40,110,80,40,BLACK);
     tft.setTextColor(ILI9341_RED);  
-    tft.drawFloat(temperatureC, 2, 40, 0, 7);
+    tft.drawFloat(floatTemperatureC, 2, 40, 0, 7);
     tft.setTextColor(ILI9341_YELLOW);  
-    tft.drawFloat(heatIndexC, 2, 40, 55, 7);
+    tft.drawFloat(floatHeatIndexC, 2, 40, 55, 7);
     tft.setTextColor(ILI9341_BLUE);  
-    tft.drawNumber((int)humidity, 55, 110, 6);
+    tft.drawNumber((int)floatHumidity, 55, 110, 6);
   }
 } 
 
@@ -567,7 +618,17 @@ void showBigClock()
   updateBigClockTime = 0;
 
   tft.fillScreen(ILI9341_BLACK);
-  tft.setTextColor(ILI9341_WHITE);  
+
+  if ((intTimePM && (intTimeHour >= 6))
+    || (!intTimePM && (intTimeHour < 6))
+    || (!intTimePM && (intTimeHour == 12)))
+  {
+    tft.setTextColor(ILI9341_BLUE);  
+  }
+  else
+  {
+    tft.setTextColor(ILI9341_WHITE);  
+  }
 
   memset(buf, 0, sizeof(buf));
   sprintf(buf, "%2d:%02d", intTimeHour, intTimeMinute);
@@ -638,7 +699,7 @@ void updatePowerData()
     tft.setTextSize(1);
     tft.fillRect(40,153,94,40,BLACK);
     tft.setTextColor(ILI9341_RED);  
-    tft.drawFloat(powerWatts, 2, 50, 162, 4);
+    tft.drawFloat(floatPowerWatts, 2, 50, 162, 4);
   }
 } 
 
@@ -703,7 +764,7 @@ void drawLedStripImage(boolean state)
   {
     return;
   }
-  
+
   if (state)
   {
     bmpDraw("ledon.bmp", 137, 173);
@@ -741,9 +802,9 @@ void setFanOptionsScreen()
   tft.fillRect(10,70,20,20,ILI9341_BLACK);
   tft.drawString("Dec speed by 1 step for two degrees drop", 37, 72, 2);
   tft.fillRect(10,100,20,20,ILI9341_BLACK);
-  tft.drawString("Dec speed by 1 step every 90 minutes", 37, 102, 2);
+  tft.drawString("Dec speed by 1 step every 120 minutes", 37, 102, 2);
   tft.fillRect(10,130,20,20,ILI9341_BLACK);
-  tft.drawString("Dec speed by 1 step every 120 minutes", 37, 132, 2);
+  tft.drawString("Dec speed by 1 step every 180 minutes", 37, 132, 2);
   tft.fillRect(10,160,20,20,ILI9341_BLACK);
   tft.drawString("Turn off if temp below", 37, 162, 2);
   tft.fillRect(210,160,43,20,ILI9341_BLUE);
@@ -758,10 +819,10 @@ void setFanOptionsScreen()
   case Decrease1StepFor2DegreesDrop:
     bmpDraw("tick.bmp", 10, 70);
     break;
-  case Decrease1StepEvery90Mins:
+  case Decrease1StepEvery120Mins:
     bmpDraw("tick.bmp", 10, 100);
     break;
-  case Decrease1StepEvery120Mins:
+  case Decrease1StepEvery180Mins:
     bmpDraw("tick.bmp", 10, 130);
     break;
   case StopIfBelow:
@@ -877,7 +938,7 @@ void updateDebugWindow(int dtype, char *str)
   {
     return;
   }
-  
+
   memset(buffer, 0, sizeof(buffer));
   memset(buffer2, 0, sizeof(buffer2));
   memset(line1, 0, sizeof(line1));
@@ -1086,31 +1147,15 @@ void toggleLight()
   if (bLightRelayActivated)
   {
     bLightRelayActivated = false;
+    EEPROM.write(4, 0);
     digitalWrite(PIN_LIGHT_RELAY, LOW);
   }
   else
   {
     bLightRelayActivated = true;
+    EEPROM.write(4, 1);
     digitalWrite(PIN_LIGHT_RELAY, HIGH);
   }
-
-  delay(200);
-  bLightZeroCrossingDetected = false;
-  bFanZeroCrossingDetected = false;
-  delay(30);
-
-  if (bLightZeroCrossingDetected)
-  {
-    bLightOn = true;
-    drawLightOn();
-  }
-  else
-  {
-    bLightOn = false;
-    drawLightOff();
-  }
-
-  sendLightStateToESP8266();
 }
 
 void turnLightOn()
@@ -1134,7 +1179,7 @@ void setFanOn()
   bFanOn = true;
   drawFanOn();
   fanRunTime = 0;
-  fanStartingTemperature = temperatureC;
+  fanStartingTemperature = floatTemperatureC;
   fanStartingSpeed = 0;
 }
 
@@ -1146,7 +1191,13 @@ void setFanOff()
 
 void setFanSpeed()
 {
-  switch (fan_speed)
+  if (prev_intFanSpeed != intFanSpeed)
+  {
+    prev_intFanSpeed = intFanSpeed;
+    EEPROM.write(6, intFanSpeed);
+  }
+
+  switch (intFanSpeed)
   {
   case 0:
     digitalWrite(PIN_FAN_TRIAC1, LOW);
@@ -1198,21 +1249,15 @@ void setFanSpeed()
     break;
   }
   drawFanSpeed();
-  
-  // Send fan state info only if there is a change
-  if ((fan_speed != prev_fan_speed) || (bFanOn != bPrevFanOn))
-  {
-    prev_fan_speed = fan_speed;
-    bPrevFanOn     = bFanOn;
-    sendFanStateToESP8266();
-  }
 }
 
 void increaseFanSpeed()
 {
-  if (fan_speed < 7)
+  char str[10];
+  if (intFanSpeed < 7)
   {
-    fan_speed++;
+    intFanSpeed++;
+    sendIntToESP8266("ChangedFanSpeed", intFanSpeed); 
     setFanSpeed();
   }
   drawFastFanSpeedButton();
@@ -1220,9 +1265,11 @@ void increaseFanSpeed()
 
 void decreaseFanSpeed()
 {
-  if (fan_speed > 1)
+  char str[10];
+  if (intFanSpeed > 1)
   {
-    fan_speed--;
+    intFanSpeed--;
+    sendIntToESP8266("ChangedFanSpeed", intFanSpeed); 
     setFanSpeed();
   }
   drawSlowFanSpeedButton();
@@ -1233,27 +1280,16 @@ void toggleFan()
   if (bFanRelay1Activated)
   {
     bFanRelay1Activated = false;
+    EEPROM.write(5, 0);
     digitalWrite(PIN_FAN_RELAY1, LOW);
   }
   else
   {
     bFanRelay1Activated = true;
+    EEPROM.write(5, 1);
     digitalWrite(PIN_FAN_RELAY1, HIGH);
   }
 
-  delay(200);
-  bLightZeroCrossingDetected = false;
-  bFanZeroCrossingDetected = false;
-  delay(30);
-
-  if (bFanZeroCrossingDetected)
-  {
-    setFanOn();
-  }
-  else
-  {
-    setFanOff();
-  }
   setFanSpeed();
 }
 
@@ -1273,8 +1309,24 @@ void turnFanOff()
   }
 }
 
-void turnOffLeds()
+void turnOnLed()
 {
+  if (!bLedOn)
+  {
+    bLedOn = true;
+    bColorChanged = true;
+    sendIntToESP8266("ChangedLed", bLedOn?1:0);
+  }
+}
+
+void turnOffLed()
+{
+  if (bLedOn)
+  {
+    bLedOn = false;
+    sendIntToESP8266("ChangedLed", bLedOn?1:0);
+  }
+
   for(int i=0; i<strip.numPixels(); i++) 
   {
     leds[i].r=0;
@@ -1283,52 +1335,24 @@ void turnOffLeds()
     strip.setPixelColor(i, 0);
   }
   strip.show();
-}  
+}
 
 void toggleLed()
 {
-  StaticJsonBuffer<200> jsonBuffer;
-  StaticJsonBuffer<200> jsonBuffer2;
-  JsonObject& root = jsonBuffer.createObject();
-  JsonObject& root2 = jsonBuffer2.createObject();
-  char buffer[256] = "";
-
   if (bLedOn)
   {
     bLedOn = false;
-    turnOffLeds();
+    turnOffLed();
+    sendIntToESP8266("ChangedLed", 0);
   }
   else
   {
     bLedOn = true;
     bColorChanged = true;
+    sendIntToESP8266("ChangedLed", 1);
   }
 
   drawLedStripImage(bLedOn);
-
-  // Send to ESP8266
-  root["LedState"] = (bLedOn)?1:0;
-  root2["EnvData"] = root;
-  root2.printTo(Serial);
-  Serial.println();
-  root2.printTo(buffer, 256);
-  updateDebugWindow(DebugMQTTSent, buffer);
-}
-
-void turnLedOn()
-{
-  if(!bLedOn)
-  {
-    toggleLed();
-  }
-}
-
-void turnLedOff()
-{
-  if(bLedOn)
-  {
-    toggleLed();
-  }
 }
 
 void turnOffTimeAlarm()
@@ -1340,62 +1364,120 @@ void turnOffTimeAlarm()
   }
 }
 
-void sendDataToESP8266()
+void sendRGBStateToESP8266()
 {
-  char temperatureStr[10], humidityStr[10], wattsStr[10];
-  char buffer[256] = "";
-
-  StaticJsonBuffer<200> jsonBuffer;
-  StaticJsonBuffer<200> jsonBuffer2;
+  StaticJsonBuffer<100> jsonBuffer;
+  StaticJsonBuffer<120> jsonBuffer2;
+  //  StaticJsonBuffer<140> jsonBuffer3;
   JsonObject& root = jsonBuffer.createObject();
   JsonObject& root2 = jsonBuffer2.createObject();
+  //  JsonObject& root3 = jsonBuffer3.createObject();
 
-  dtostrf(temperatureC, 5, 2, temperatureStr);
-  root["Temperature"] = temperatureStr;
-  dtostrf(humidity, 5, 2, humidityStr);
-  root["Humidity"] = humidityStr;
-  //    root["LightState"] = (bLightOn)?1:0;
-  //    root["FanState"] = (bFanOn)?1:0;
-  dtostrf(powerWatts, 5, 2, wattsStr);
-  root["Watts"]    = wattsStr;
+  root["ChangedLedColorRed"] = colorRed;
+  root["ChangedLedColorGreen"] = colorGreen;
+  root["ChangedLedColorBlue"] = colorBlue;
 
-  root2["EnvData"] = root;
-
+  //  root2["ChangedLedColor"] = root;
+  root2["socket1"] = root;
   root2.printTo(Serial);
   Serial.println();
+}
+
+void sendIntToESP8266(char *type, int value)
+{
+  StaticJsonBuffer<50> jsonBuffer;
+  StaticJsonBuffer<70> jsonBuffer2;
+  JsonObject& root = jsonBuffer.createObject();
+  JsonObject& root2 = jsonBuffer2.createObject();
+  char buffer[256] = "";
+
+  // Send to ESP8266
+  root[type] = value;
+  root2["socket1"] = root;
+  root2.printTo(Serial);
+  Serial.println();
+
   root2.printTo(buffer, 256);
   updateDebugWindow(DebugMQTTSent, buffer);
 }
 
-void sendLightStateToESP8266()
+void sendAllStateToESP8266()
 {
-  StaticJsonBuffer<200> jsonBuffer;
-  StaticJsonBuffer<200> jsonBuffer2;
+  StaticJsonBuffer<80> jsonBuffer;
+  StaticJsonBuffer<60> jsonBuffer2;
+//  StaticJsonBuffer<140> jsonBuffer3;
   JsonObject& root = jsonBuffer.createObject();
   JsonObject& root2 = jsonBuffer2.createObject();
-  char buffer[256] = "";
+//  JsonObject& root3 = jsonBuffer3.createObject();
+  char fstr[10];
 
-  root["LightState"] = (bLightOn)?1:0;
-  root2["EnvData"] = root;
+  switch(intStatusField)
+  {
+    case 0: 
+      dtostrf(floatTemperatureC, 5, 2, fstr);
+      root["StateTemperature"]   = fstr;
+      break;
+    case 1: 
+      dtostrf(floatHumidity, 5, 2, fstr);
+      root["StateHumidity"]      = fstr;
+      break;
+    case 2: 
+      dtostrf(floatPowerWatts, 5, 2, fstr);
+      root["StateWatts"]         = fstr;
+      break;
+    case 3: 
+      root["StateLight"]         = bLightOn?1:0;
+      break;
+    case 4: 
+      root["StateFan"]           = bFanOn?1:0;
+      break;
+    case 5: 
+      root["StateFanSpeed"]      = intFanSpeed;
+      break;
+    case 6: 
+      root["StateLedMode"]       = intLedMode;
+      break;
+    case 7: 
+      root["StateLedSpeed"]      = intLedSpeed;
+      break;
+    case 8: 
+      root["StateLed"]           = bLedOn?1:0;
+      break;
+    case 9: 
+      root["StateLedColorRed"]   = colorRed;
+      break;
+    case 10: 
+      root["StateLedColorGreen"] = colorGreen;
+      break;
+    case 11: 
+      root["StateLedColorBlue"]  = colorBlue;
+      break;
+  }
+  
+  if(++intStatusField > 11)
+  {
+    intStatusField = 0;
+  }
+  
+  root2["socket1"] = root;
   root2.printTo(Serial);
   Serial.println();
-  root2.printTo(buffer, 256);
-  updateDebugWindow(DebugMQTTSent, buffer);
 }
 
-void sendFanStateToESP8266()
+void sendStringToESP8266(char *type, char *value)
 {
-  StaticJsonBuffer<200> jsonBuffer;
-  StaticJsonBuffer<200> jsonBuffer2;
+  StaticJsonBuffer<50> jsonBuffer;
+  StaticJsonBuffer<70> jsonBuffer2;
   JsonObject& root = jsonBuffer.createObject();
   JsonObject& root2 = jsonBuffer2.createObject();
   char buffer[256] = "";
 
-  root["FanState"] = (bFanOn)?1:0;
-  root["FanSpeed"] = fan_speed;
-  root2["EnvData"] = root;
+  // Send to ESP8266
+  root[type] = value;
+  root2["socket1"] = root;
   root2.printTo(Serial);
   Serial.println();
+
   root2.printTo(buffer, 256);
   updateDebugWindow(DebugMQTTSent, buffer);
 }
@@ -1430,15 +1512,16 @@ void rainbow(uint8_t wait) {
 
 void turnLcdBacklightOn()
 {
-  StaticJsonBuffer<200> jsonBuffer;
-  StaticJsonBuffer<200> jsonBuffer2;
-  JsonObject& root = jsonBuffer.createObject();
-  JsonObject& root2 = jsonBuffer2.createObject();
-  char buffer[256] = "";
-
   noMotionDetectedTime = 0;
+
+  if (!bBacklightEnabled)
+  {
+    return;
+  }
+
   if (!bBacklightOn)
   {
+    bBacklightOn = true;
     // Dont want LCD screen at full brightness in night - fan on/light off
     if ((noMotionDetectedTime > 600000) && bFanOn && !bLightOn)
     {
@@ -1448,35 +1531,101 @@ void turnLcdBacklightOn()
     {
       digitalWrite(TFT_BACKLIGHT, HIGH);
     }
-
-    root["Backlight"] = 1;
-    root2["EnvData"] = root;
-    root2.printTo(Serial);
-    Serial.println();
-    root2.printTo(buffer, 256);
-    updateDebugWindow(DebugMQTTSent, buffer);
-    
-    bBacklightOn = true;
+    sendIntToESP8266("StateBacklight", 1);
   }
 }
 
 void turnLcdBacklightOff()
 {
-  StaticJsonBuffer<200> jsonBuffer;
-  StaticJsonBuffer<200> jsonBuffer2;
-  JsonObject& root = jsonBuffer.createObject();
-  JsonObject& root2 = jsonBuffer2.createObject();
-  char buffer[256] = "";
-  
-  digitalWrite(TFT_BACKLIGHT, LOW);
-  bBacklightOn = false;
+  if (bBacklightOn)
+  {
+    digitalWrite(TFT_BACKLIGHT, LOW);
+    bBacklightOn = false;
+  }
 
-  root["Backlight"] = 0;
-  root2["EnvData"] = root;
-  root2.printTo(Serial);
-  Serial.println();
-  root2.printTo(buffer, 256);
-  updateDebugWindow(DebugMQTTSent, buffer);
+  sendIntToESP8266("StateBacklight", 0);
+}
+
+void updateStateFromEEPROM()
+{
+  if(EEPROM.read(0) != 255)
+  {
+    fanOptionSelected = (fanOptions)EEPROM.read(0);
+  }
+
+  if(EEPROM.read(1) != 255)
+  {
+    lightOptionSelected = (lightOptions)EEPROM.read(1);
+  }
+
+  if(EEPROM.read(2) != 255)
+  {
+    timeFanOptionSelected = (timeFanOptions)EEPROM.read(2);
+  }
+
+  if(EEPROM.read(3) != 255)
+  {
+    timeLightOptionSelected = (timeLightOptions)EEPROM.read(3);
+  }
+
+  if(EEPROM.read(4) != 255)
+  {
+    if(EEPROM.read(4) == 0)
+    {
+      digitalWrite(PIN_LIGHT_RELAY, LOW);
+    }
+    else if(EEPROM.read(4) == 1)
+    {
+      digitalWrite(PIN_LIGHT_RELAY, HIGH);
+    }
+  }
+
+  if(EEPROM.read(5) != 255)
+  {
+    if(EEPROM.read(5) == 0)
+    {
+      digitalWrite(PIN_FAN_RELAY1, LOW);
+    }
+    else if(EEPROM.read(5) == 1)
+    {
+      digitalWrite(PIN_FAN_RELAY1, HIGH);
+    }
+  }
+
+  if(EEPROM.read(7) != 255)
+  {
+    if(EEPROM.read(7) == 0)
+    {
+      bLedOn = false;
+    }
+    else if(EEPROM.read(7) == 1)
+    {
+      bLedOn = true;
+    }
+    prev_bLedOn = bLedOn;
+  }
+
+  if(EEPROM.read(8) != 255)
+  {
+    intLedMode = EEPROM.read(8);
+    prev_intLedMode = intLedMode;
+    ledMode = (ledModes) intLedMode;
+  }
+
+  if(EEPROM.read(9) != 255)
+  {
+    intLedSpeed = EEPROM.read(9);
+    prev_intLedSpeed = intLedSpeed;
+    ledUpdateInterval = (unsigned long)(pow(2,(12-intLedSpeed)));
+  }
+  
+  colorRed   = EEPROM.read(10);
+  colorGreen = EEPROM.read(11);
+  colorBlue  = EEPROM.read(12);
+
+  prev_colorRed   = colorRed;
+  prev_colorGreen = colorGreen;
+  prev_colorBlue  = colorBlue;
 }
 
 void setup()
@@ -1518,6 +1667,8 @@ void setup()
   // This will make the fan speed circuit active
   digitalWrite(PIN_FAN_RELAY2, HIGH);
 
+  updateStateFromEEPROM();
+
   tft.setTextColor(WHITE);  
   tft.setTextSize(1);
   tft.setCursor(110,205);
@@ -1534,40 +1685,25 @@ void setup()
 
   dht.begin();
 
-  digitalWrite(PIN_BUZZER,HIGH);
-  delay(2000);
-  digitalWrite(PIN_BUZZER,LOW);
-
+  buzz(2500, 50);
+  
   setHomeScreen();
-  setFanSpeed();
   bInitializeHomeScreen = true;
 
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
 
-  rainbow(20);
-  turnOffLeds(); // Initialize all pixels to 'off'
-  
+  rainbow(5);
+  turnOffLed(); // Initialize all pixels to 'off'
+
+  if(EEPROM.read(6) != 255)
+  {
+    intFanSpeed = EEPROM.read(6);
+    prev_intFanSpeed = intFanSpeed;
+    setFanSpeed();
+  }
+
   randomSeed(analogRead(0));
-  
-  // Read settings from EEPROM
-  if(EEPROM.read(0) != 255)
-  {
-    fanOptionSelected = (fanOptions)EEPROM.read(0);
-  }
-  if(EEPROM.read(1) != 255)
-  {
-    lightOptionSelected = (lightOptions)EEPROM.read(1);
-  }
-  if(EEPROM.read(2) != 255)
-  {
-    timeFanOptionSelected = (timeFanOptions)EEPROM.read(2);
-  }
-  if(EEPROM.read(3) != 255)
-  {
-    timeLightOptionSelected = (timeLightOptions)EEPROM.read(3);
-  }
-  
 }
 
 
@@ -1586,7 +1722,7 @@ void loop()
   weatherUpdateTime     += elapsedMillis;
   zeroCrossCheckTime    += elapsedMillis;
   pirSensorCheckTime    += elapsedMillis;
-  sendDataToESP8266Time += elapsedMillis;
+  sendStatusTime        += elapsedMillis;
   checkPowerUsageTime   += elapsedMillis;
   checkAlarmTime        += elapsedMillis;
   checkFanTime          += elapsedMillis;
@@ -1595,6 +1731,7 @@ void loop()
   updateVarWindowTime   += elapsedMillis;
   updateClockTime       += elapsedMillis;
   updateBigClockTime    += elapsedMillis;
+  saveEEPROMTime        += elapsedMillis;
 
   if (pirSensorCheckTime > pirSensorCheckInterval)
   {
@@ -1612,13 +1749,13 @@ void loop()
     pir = digitalRead(PIN_PIR_SENSOR);
     if (pir == 1)
     {
-      // If movement is detected after a long time, say 10 mins, display 
-      // big clock.  For instance, when waking up after sleep, display the
-      // clock first.
-      if ((noMotionDetectedTime > 600000) && bFanOn && !bLightOn)
-      {
-        showBigClock();
-      } 
+      //      // If movement is detected after a long time, say 10 mins, display 
+      //      // big clock.  For instance, when waking up after sleep, display the
+      //      // clock first.
+      //      if ((noMotionDetectedTime > 600000) && bFanOn && !bLightOn)
+      //      {
+      //        showBigClock();
+      //      } 
 
       turnLcdBacklightOn();
     }
@@ -1657,6 +1794,13 @@ void loop()
 
     turnOffTimeAlarm();
 
+    if (bBigClockShow)
+    {
+      bBigClockShow = false;
+      setHomeScreen();
+      bInitializeHomeScreen = true;
+    }
+
     if (screenSelected == HomeScreen)
     {
       // Light switch is pressed
@@ -1667,7 +1811,7 @@ void loop()
 
         // If fan is pressed fro more than 2 seconds, open the fan options
         // screen instead of toggling power to it.
-        if (keyPressTime > 2000)
+        if (keyPressTime > 1000)
         {
           setLightOptionsScreen();
         }
@@ -1684,7 +1828,7 @@ void loop()
 
         // If fan is pressed fro more than 2 seconds, open the fan options
         // screen instead of toggling power to it.
-        if (keyPressTime > 2000)
+        if (keyPressTime > 1000)
         {
           setFanOptionsScreen();
         }
@@ -1714,15 +1858,10 @@ void loop()
       // Alarm button is pressed
       else if ( (x>=137) && (x<=193) && (y>=115) && (y<=173) )
       {
-        StaticJsonBuffer<200> jsonBuffer;
-        StaticJsonBuffer<200> jsonBuffer2;
-        JsonObject& root = jsonBuffer.createObject();
-        JsonObject& root2 = jsonBuffer2.createObject();
-
         waitForIt(137, 115, 56, 56);
         keyPressTime = millis() - currentMillis;
 
-        if (keyPressTime > 2000)
+        if (keyPressTime > 1000)
         {
           if (alarmCurrentState == AlarmUnarmed)
           {
@@ -1730,14 +1869,7 @@ void loop()
             bAlarmIntruderAlertSent = false;
             updateAlarmStatus();
             checkAlarmTime = checkAlarmInterval;
-            
-            // Send to ESP8266
-            root["AlarmState"] = "AlarmArming";
-            root2["EnvData"] = root;
-            root2.printTo(Serial);
-            Serial.println();
-            root2.printTo(buf, 256);
-            updateDebugWindow(DebugMQTTSent, buf);
+            sendStringToESP8266("StateAlarm", "AlarmArming");
           }
           else if (alarmCurrentState == AlarmArming)
           {
@@ -1757,7 +1889,7 @@ void loop()
 
         // If clock is pressed for more than 2 seconds, open the time options
         // screen instead of toggling alarm state.
-        if (keyPressTime > 2000)
+        if (keyPressTime > 1000)
         {
           setTimeOptionsScreen();
         }
@@ -1780,7 +1912,7 @@ void loop()
         waitForIt(0, 210, 320, 30);
         keyPressTime = millis() - currentMillis;
 
-        if (keyPressTime > 2000)
+        if (keyPressTime > 1000)
         {
           if (bDebugOn)
           {
@@ -1846,13 +1978,13 @@ void loop()
       }        
       else if ( (x>=10) && (x<=30) && (y>=100) && (y<=120) )
       {
-        if (fanOptionSelected == Decrease1StepEvery90Mins)
+        if (fanOptionSelected == Decrease1StepEvery120Mins)
         {
           fanOptionSelected = noFanOptionSelected;
         }
         else
         {
-          fanOptionSelected = Decrease1StepEvery90Mins;
+          fanOptionSelected = Decrease1StepEvery120Mins;
         }
 
         waitForIt(10, 100, 20, 20);
@@ -1861,13 +1993,13 @@ void loop()
       }        
       else if ( (x>=10) && (x<=30) && (y>=130) && (y<=150) )
       {
-        if (fanOptionSelected == Decrease1StepEvery120Mins)
+        if (fanOptionSelected == Decrease1StepEvery180Mins)
         {
           fanOptionSelected = noFanOptionSelected;
         }
         else
         {
-          fanOptionSelected = Decrease1StepEvery120Mins;
+          fanOptionSelected = Decrease1StepEvery180Mins;
         }
 
         waitForIt(10, 130, 20, 20);
@@ -1940,12 +2072,6 @@ void loop()
     }
     else if (screenSelected == PinInputScreen)
     {
-      StaticJsonBuffer<200> jsonBuffer;
-      StaticJsonBuffer<200> jsonBuffer2;
-      JsonObject& root = jsonBuffer.createObject();
-      JsonObject& root2 = jsonBuffer2.createObject();
-
-
       // 1
       if ( (x>=81) && (x<=124) && (y>=44) && (y<=73) )
       {
@@ -2023,26 +2149,12 @@ void loop()
         setHomeScreen();
         bInitializeHomeScreen = true;
         digitalWrite(PIN_BUZZER,LOW);
-
-        // Send to ESP8266
-        root["AlarmState"] = "AlarmUnarmed";
-        root2["EnvData"] = root;
-        root2.printTo(Serial);
-        Serial.println();
-        root2.printTo(buf, 256);
-        updateDebugWindow(DebugMQTTSent, buf);
+        sendStringToESP8266("StateAlarm", "AlarmUnarmed");
       }
       else if (currentPIN>999)
       {
         currentPIN = 0;
-
-        // Send to ESP8266
-        root["AlarmState"] = "AlarmWrongPinEntered";
-        root2["EnvData"] = root;
-        root2.printTo(Serial);
-        Serial.println();
-        root2.printTo(buf, 256);
-        updateDebugWindow(DebugMQTTSent, buf);
+        sendStringToESP8266("StateAlarm", "AlarmWrongPinEntered");
       }
       updatePinInputScreen();
     }
@@ -2147,6 +2259,12 @@ void loop()
           str[pos++] = (char)c;
         }
 
+        if (pos > 100)
+        {
+          buzz(10000, 50);
+          break;
+        }
+
         if (c == 125)  // }
         {
           opening_brace--;
@@ -2170,34 +2288,34 @@ void loop()
             turnLcdBacklightOn();
             if(strstr(str,"LightCommand"))
             {
-              lightCommand = root["LightCommand"];
+              intLightCommand = root["LightCommand"];
 
-              if (lightCommand == 0)
+              if (intLightCommand == 0)
               {
                 turnLightOff();
               }
-              else if(lightCommand == 1)
+              else if(intLightCommand == 1)
               {
                 turnLightOn();
               }
             }
             else if(strstr(str,"FanCommand"))
             {
-              fanCommand = root["FanCommand"];
+              intFanCommand = root["FanCommand"];
 
-              if (fanCommand == 0)
+              if (intFanCommand == 0)
               {
                 turnFanOff();
               }
-              else if(fanCommand == 1)
+              else if(intFanCommand == 1)
               {
                 turnFanOn();
               }
             }
             else if(strstr(str,"FanSpeedCommand"))
             {
-              fan_speed = root["FanSpeedCommand"];
-
+              intFanSpeed = root["FanSpeedCommand"];
+              sendIntToESP8266("ChangedFanSpeed", intFanSpeed);
               turnFanOn();
               setFanSpeed();
             }
@@ -2207,72 +2325,55 @@ void loop()
 
               if (ledCommand == 0)
               {
-                turnLedOff();
+                turnOffLed();
               }
               else if(ledCommand == 1)
               {
-                turnLedOn();
+                turnOnLed();
               }
+            } 
+            else if(strstr(str,"LedSpeedCommand"))
+            {
+              intLedSpeed = root["LedSpeedCommand"];
+              sendIntToESP8266("ChangedLedSpeed", intLedSpeed);
+              ledUpdateInterval = (unsigned long)(pow(2,(12-intLedSpeed)));
             } 
             else if(strstr(str,"LedModeCommand"))
             {
-              if (root["LedModeCommand"] == 0)
-              {
-                ledMode = LedModeDefault;
-              }
-              else if (root["LedModeCommand"] ==1)
-              {
-                ledMode = LedModeRainbow;
-              }
-              else if (root["LedModeCommand"] ==2)
-              {
-                ledMode = LedModeCycle;
-              }
-              else if (root["LedModeCommand"] ==3)
-              {
-                ledMode = LedModeCycle2;
-              }
-              else if (root["LedModeCommand"] ==4)
-              {
-                ledMode = LedModeCycle3;
-              }
-              else if (root["LedModeCommand"] ==5)
-              {
-                ledMode = LedModeCycle4;
-              }
-              else if (root["LedModeCommand"] ==6)
-              {
-                ledMode = LedModeRandom;
-              }
-              else if (root["LedModeCommand"] ==7)
-              {
-                ledMode = LedModeRandom2;
-              }
-              else if (root["LedModeCommand"] ==8)
-              {
-                ledMode = LedModeRandomCycle;
-              }
-              else if (root["LedModeCommand"] ==9)
-              {
-                ledMode = LedModeRandomCycle2;
-              }
-              turnOffLeds();
-//              turnLedOn();
+              intLedMode = root["LedModeCommand"];
+              sendIntToESP8266("ChangedLedMode", intLedMode);
+              ledMode = (ledModes) intLedMode;
+              initGlobals();
+              turnOnLed();
               bColorChanged = true;
-              ledUpdateInterval = 0;
             } 
             else if(strstr(str,"LedColor"))
             {
               colorRed   = root["LedColorRed"];
               colorGreen = root["LedColorGreen"];
               colorBlue  = root["LedColorBlue"];
-              turnOffLeds();
-              turnLedOn();
-              ledUpdateInterval = 0;
+              turnOnLed();
               bColorChanged = true;
-              
-              if ((ledMode != LedModeCycle) && (ledMode != LedModeCycle2) && (ledMode != LedModeCycle2) && (ledMode != LedModeCycle3) && (ledMode != LedModeCycle4))
+
+              //              sendIntToESP8266("ChangedLedColorRed",   colorRed);
+              //              sendIntToESP8266("ChangedLedColorGreen", colorGreen);
+              //              sendIntToESP8266("ChangedLedColorBlue",  colorBlue);
+              sendRGBStateToESP8266();
+
+              if ((ledMode != LedModeDefault) && 
+                (ledMode != LedModeNegative) && 
+                (ledMode != LedModeFade) && 
+                (ledMode != LedModeCycle) && 
+                (ledMode != LedModeCycle2) && 
+                (ledMode != LedModeCycle2) && 
+                (ledMode != LedModeCycle3) && 
+                (ledMode != LedModeCycle4) && 
+                (ledMode != LedModeStrobe) &&
+                (ledMode != LedModeStrobeStep) &&
+                (ledMode != LedModeStrobeStep2) &&
+                (ledMode != LedModeLarsonScanner))
               {
+                intLedMode = 0;
                 ledMode = LedModeDefault;
               }
             }
@@ -2300,10 +2401,6 @@ void loop()
   if(checkAlarmTime >= checkAlarmInterval)
   {
     checkAlarmTime = 0;
-    StaticJsonBuffer<200> jsonBuffer;
-    StaticJsonBuffer<200> jsonBuffer2;
-    JsonObject& root = jsonBuffer.createObject();
-    JsonObject& root2 = jsonBuffer2.createObject();
 
     // Calculate how many milliseconds have elapsed since previous time we were here
     currentMillisAlarm = currentMillis;
@@ -2331,13 +2428,7 @@ void loop()
         alarmCurrentState = AlarmArmed;
         alarmTimeElapsedAfterTriggering = 0;
 
-        // Send to ESP8266
-        root["AlarmState"] = "AlarmArmed";
-        root2["EnvData"] = root;
-        root2.printTo(Serial);
-        Serial.println();
-        root2.printTo(buf, 256);
-        updateDebugWindow(DebugMQTTSent, buf);
+        sendStringToESP8266("StateAlarm", "AlarmArmed");
       }
 
       // If the alarm needs to be disarmed while it is arming, then
@@ -2355,14 +2446,7 @@ void loop()
       {
         alarmCurrentState = AlarmTriggered;
         setPinInputScreen();
-
-        // Send to ESP8266
-        root["AlarmState"] = "AlarmTriggered";
-        root2["EnvData"] = root;
-        root2.printTo(Serial);
-        Serial.println();
-        root2.printTo(buf, 256);
-        updateDebugWindow(DebugMQTTSent, buf);
+        sendStringToESP8266("StateAlarm", "AlarmTriggered");
       }
     }
     else if (alarmCurrentState == AlarmTriggered)
@@ -2393,14 +2477,7 @@ void loop()
         {
           updateAlertTime = 0;
           bAlarmIntruderAlertSent = true;
-
-          // Send to ESP8266
-          root["AlarmState"] = "AlarmIntruderAlert";
-          root2["EnvData"] = root;
-          root2.printTo(Serial);
-          Serial.println();
-          root2.printTo(buf, 256);
-          updateDebugWindow(DebugMQTTSent, buf);
+          sendStringToESP8266("StateAlarm", "AlarmIntruderAlert");
         }
       }
       else
@@ -2434,7 +2511,7 @@ void loop()
       {
         if (fanRunTime > 600000)
         {
-          fanStartingSpeed = fan_speed;
+          fanStartingSpeed = intFanSpeed;
         }
       }
       else
@@ -2442,51 +2519,51 @@ void loop()
         switch (fanOptionSelected)
         {
         case Decrease1StepFor1DegreeDrop:
-          tempDiff = fanStartingTemperature - temperatureC;         
+          tempDiff = fanStartingTemperature - floatTemperatureC;         
           if (tempDiff > 0)
           {
-            fan_speed = fanStartingSpeed - (int)tempDiff;
-            if(fan_speed<1)
+            intFanSpeed = fanStartingSpeed - (int)tempDiff;
+            if(intFanSpeed<1)
             {
-              fan_speed = 1;
+              intFanSpeed = 1;
               turnFanOff();
             }
             setFanSpeed();
           }
           break;
         case Decrease1StepFor2DegreesDrop:
-          tempDiff = fanStartingTemperature - temperatureC;         
+          tempDiff = fanStartingTemperature - floatTemperatureC;         
           if (tempDiff > 0)
           {
-            fan_speed = fanStartingSpeed - (int)tempDiff/2;
-            if(fan_speed<1)
+            intFanSpeed = fanStartingSpeed - (int)tempDiff/2;
+            if(intFanSpeed<1)
             {
-              fan_speed = 1;
+              intFanSpeed = 1;
               turnFanOff();
             }
             setFanSpeed();
           }
           break;
-        case Decrease1StepEvery90Mins:
-          fan_speed = fanStartingSpeed - (int)(fanRunTime/5400000);
-          if(fan_speed<1)
+        case Decrease1StepEvery120Mins:
+          intFanSpeed = fanStartingSpeed - (int)(fanRunTime/7200000);
+          if(intFanSpeed<1)
           {
-            fan_speed = 1;
+            intFanSpeed = 1;
             turnFanOff();
           }
           setFanSpeed();
           break;
-        case Decrease1StepEvery120Mins:
-          fan_speed = fanStartingSpeed - (int)(fanRunTime/7200000);
-          if(fan_speed<1)
+        case Decrease1StepEvery180Mins:
+          intFanSpeed = fanStartingSpeed - (int)(fanRunTime/10800000);
+          if(intFanSpeed<1)
           {
-            fan_speed = 1;
+            intFanSpeed = 1;
             turnFanOff();
           }
           setFanSpeed();
           break;
         case StopIfBelow:
-          if (temperatureC < fanStopBelowTemperature)
+          if (floatTemperatureC < fanStopBelowTemperature)
           {
             turnFanOff();
           }
@@ -2504,32 +2581,32 @@ void loop()
     checkLightTime = 0;
     switch (lightOptionSelected)
     {
-      case LightFullyAutomatic:
-        if(!bLightOn)
+    case LightFullyAutomatic:
+      if(!bLightOn)
+      {
+        if (pir == 1)
         {
-          if (pir == 1)
-          {
-            turnLightOn();
-          }
+          turnLightOn();
         }
-        else
+      }
+      else
+      {
+        if (noMotionDetectedTime > 120000)  // 2 mins
         {
-          if (noMotionDetectedTime > 120000)  // 2 mins
-          {
-            turnLightOff();
-          }
+          turnLightOff();
         }
+      }
       break;
-      case LightSwitchOffIfNoMotionFor2Mins:
-        if(bLightOn)
+    case LightSwitchOffIfNoMotionFor2Mins:
+      if(bLightOn)
+      {
+        if (noMotionDetectedTime > 120000)  // 2 mins
         {
-          if (noMotionDetectedTime > 120000)  // 2 mins
-          {
-            turnLightOff();
-          }
+          turnLightOff();
         }
+      }
       break;
-      case noLightOptionSelected:
+    case noLightOptionSelected:
       break;
     }
   }
@@ -2563,61 +2640,86 @@ void loop()
     case 16724175: // 1 
       buzz(2500, 50);
       turnLcdBacklightOn();
-      fan_speed = 1;
+      intFanSpeed = 1;
       turnFanOn();
       setFanSpeed();
+      fanStartingSpeed = 0;
+      fanRunTime = 0;
+      sendIntToESP8266("ChangedFanSpeed", intFanSpeed);
       break;
     case 16718055: // 2 
       buzz(2500, 50);
       turnLcdBacklightOn();
-      fan_speed = 2;
+      intFanSpeed = 2;
       turnFanOn();
       setFanSpeed();
+      fanStartingSpeed = 0;
+      fanRunTime = 0;
+      sendIntToESP8266("ChangedFanSpeed", intFanSpeed);
       break;
     case 16743045: // 3
       buzz(2500, 50);
       turnLcdBacklightOn();
-      fan_speed = 3;
+      intFanSpeed = 3;
       turnFanOn();
       setFanSpeed();
+      fanStartingSpeed = 0;
+      fanRunTime = 0;
+      sendIntToESP8266("ChangedFanSpeed", intFanSpeed);
       break;
     case 16716015: // 4
       buzz(2500, 50);
       turnLcdBacklightOn();
-      fan_speed = 4;
+      intFanSpeed = 4;
       turnFanOn();
       setFanSpeed();
+      fanStartingSpeed = 0;
+      fanRunTime = 0;
+      sendIntToESP8266("ChangedFanSpeed", intFanSpeed);
       break;
     case 16726215: // 5
       buzz(2500, 50);
       turnLcdBacklightOn();
-      fan_speed = 5;
+      intFanSpeed = 5;
       turnFanOn();
       setFanSpeed();
+      fanStartingSpeed = 0;
+      fanRunTime = 0;
+      sendIntToESP8266("ChangedFanSpeed", intFanSpeed);
       break;
     case 16734885: // 6
       buzz(2500, 50);
       turnLcdBacklightOn();
-      fan_speed = 6;
+      intFanSpeed = 6;
       turnFanOn();
       setFanSpeed();
+      fanStartingSpeed = 0;
+      fanRunTime = 0;
+      sendIntToESP8266("ChangedFanSpeed", intFanSpeed);
       break;
     case 16728765: // 7
       buzz(2500, 50);
       turnLcdBacklightOn();
-      fan_speed = 7;
+      intFanSpeed = 7;
       turnFanOn();
       setFanSpeed();
+      fanStartingSpeed = 0;
+      fanRunTime = 0;
+      sendIntToESP8266("ChangedFanSpeed", intFanSpeed);
       break;
     case 16748655: // + 
       buzz(2500, 50);
       turnLcdBacklightOn();
       increaseFanSpeed();
+      fanStartingSpeed = 0;
+      fanRunTime = 0;
       break;
     case 16754775: // -
       buzz(2500, 50);
       turnLcdBacklightOn();
       decreaseFanSpeed();
+      fanStartingSpeed = 0;
+      fanRunTime = 0;
       break;
     case 16753245: // "Power"
       buzz(2500, 50);
@@ -2634,63 +2736,65 @@ void loop()
     case 16736925: // "Mode"
       buzz(2500, 50);
       turnLcdBacklightOn();
-      turnOffLeds();
       toggleLed();
       bColorChanged = true;
       break;
     case 16712445: //  |<< (rewind)
       buzz(2500, 50);
       turnLcdBacklightOn();
-      if (ledMode == LedModeDefault)
+
+      if (--intLedMode <0)
       {
-        ledMode = LedModeRandomCycle2;
+        intLedMode = 19;
       }
-      else
-      {
-        ledMode = (ledModes)(ledMode-1);
-      }
-      ledUpdateInterval = 0;
-      turnOffLeds();
-      turnLedOn();
+      ledMode = (ledModes)intLedMode;
+
+      turnOnLed();
       bColorChanged = true;
       break;    
     case 16761405: //  >>| (forward)
       buzz(2500, 50);
       turnLcdBacklightOn();
-      if (ledMode == LedModeRandomCycle2)
+      
+      if (++intLedMode > 19)
       {
-        ledMode = LedModeDefault;
+        intLedMode = 0;
+      }
+      ledMode = (ledModes)intLedMode;
+
+      turnOnLed();
+      bColorChanged = true;
+    case 16769055: // EQ
+      if (bBacklightEnabled)
+      {
+        bBacklightEnabled = false;
+        turnLcdBacklightOff();
       }
       else
       {
-        ledMode = (ledModes)(ledMode+1);
+        bBacklightEnabled = true;
+        turnLcdBacklightOn();
       }
 
-      ledUpdateInterval = 0;
-      turnOffLeds();
-      turnLedOn();
-      bColorChanged = true;
       break;
     case 16720605: // >||
-    case 16769055: // EQ
       buzz(2500, 50);
+      bBacklightEnabled = true;
       turnLcdBacklightOn();
-      showBigClock();
+      if (bBigClockShow)
+      {
+        bBigClockShow = false;
+        setHomeScreen();
+        bInitializeHomeScreen = true;
+      }
+      else
+      {
+        showBigClock();
+        sendIntToESP8266("StateBacklight", 0);
+      }
       break;
     }
     irrecv.resume(); // Receives the next value from the button you press
-  }
-
-  if (weatherUpdateTime >= weatherUpdateInterval)
-  {
-    weatherUpdateTime = 0;
-    updateWeatherData();
-  }
-
-  if (sendDataToESP8266Time > sendDataToESP8266Interval)
-  {
-    sendDataToESP8266Time = 0;
-    sendDataToESP8266();
   }
 
   if (bInitializeHomeScreen)
@@ -2736,7 +2840,7 @@ void loop()
       {
         bLightOn = true;
         drawLightOn();
-        sendLightStateToESP8266();
+        sendIntToESP8266("ChangedLight", 1);
       }
     }
     else
@@ -2745,7 +2849,7 @@ void loop()
       {
         bLightOn = false;
         drawLightOff();
-        sendLightStateToESP8266();
+        sendIntToESP8266("ChangedLight", 0);
       }
     }
 
@@ -2754,7 +2858,7 @@ void loop()
       if (!bFanOn)
       {
         setFanOn();
-        sendFanStateToESP8266();
+        sendIntToESP8266("ChangedFan", 1);
       }
     }
     else
@@ -2762,29 +2866,22 @@ void loop()
       if (bFanOn)
       {
         setFanOff();
-        sendFanStateToESP8266();
+        sendIntToESP8266("ChangedFan", 0);
       }
     }
 
   }
 
-  if (ledUpdateTime > ledUpdateInterval)
+  if (ledUpdateTime >= ledUpdateInterval)
   {
-    long randr = 0, randg = 0, randb = 0;
+    //    long randr = 0, randg = 0, randb = 0;
     ledUpdateTime = 0;
-    
+
     if(bLedOn)
     {
-      // Turn off LEDs if alarm is not in unarmed state     
-      if (alarmCurrentState != AlarmUnarmed)
-      {
-        turnLedOff();
-      }
-
       switch (ledMode)
       {
       case LedModeDefault:
-        ledUpdateInterval = 3000;
         if (bColorChanged)
         {
           for(i=0; i<strip.numPixels(); i++) 
@@ -2795,29 +2892,53 @@ void loop()
           bColorChanged = false;      
         }
         break;
-      case LedModeRainbow:      
-        ledUpdateInterval += 100;
-        if(ledUpdateInterval > 300)
+      case LedModeNegative:
+        if (bColorChanged)
         {
-          ledUpdateInterval = 100;
+          for(i=0; i<strip.numPixels(); i++) 
+          {
+            strip.setPixelColor(i, 255 - colorRed, 255 - colorGreen, 255 - colorBlue);
+          }
+          strip.show();
+          bColorChanged = false;      
         }
+        break;
+      case LedModeFade:
+        for(i=0; i<strip.numPixels(); i++) 
+        {
+          strip.setPixelColor(i, (int)(colorRed * (100-STEP2)/100), (int)(colorGreen * (100-STEP2)/100), (int)(colorBlue * (100-STEP2)/100));
+        }
+        if(STEP == 0)
+        {
+          STEP2 = STEP2++;
+          if (STEP2 > 99)
+          {
+            STEP = 1;
+          }
+        }
+        else if(STEP == 1)
+        {
+          STEP2 = STEP2--;
+          if (STEP2 < 1)
+          {
+            STEP = 0;
+          }
+        }
+        strip.show();
+        break;
+      case LedModeRainbow:      
         if(J++ > 255)
         {
           J = 0;
         }    
 
-        for(i=0; i<strip.numPixels(); i++) 
+        for(i=0; i<LED_COUNT; i++) 
         {
           strip.setPixelColor(i, Wheel((i+J) & 255));
         }
         strip.show();
         break;
       case LedModeCycle:      
-        ledUpdateInterval += 100;
-        if(ledUpdateInterval > 300)
-        {
-          ledUpdateInterval = 100;
-        }
         if(K==0)
         {
           K = 1;
@@ -2835,12 +2956,6 @@ void loop()
         strip.show();
         break;
       case LedModeCycle2:      
-        ledUpdateInterval += 100;
-        if(ledUpdateInterval > 300)
-        {
-          ledUpdateInterval = 100;
-        }
-
         L++;
         if (L==LED_COUNT)
         {
@@ -2861,12 +2976,6 @@ void loop()
         strip.show();
         break;
       case LedModeCycle3:      
-        ledUpdateInterval += 100;
-        if(ledUpdateInterval > 300)
-        {
-          ledUpdateInterval = 100;
-        }
-
         L--;
         if (L==-1)
         {
@@ -2887,42 +2996,36 @@ void loop()
         strip.show();
         break;
       case LedModeCycle4:      
-        ledUpdateInterval += 100;
-        if(ledUpdateInterval > 300)
-        {
-          ledUpdateInterval = 100;
-        }
-
         switch(STEP)
         {
-          case 0:
-            L++;
-            if (L >= (LED_COUNT-1))
-            {
-              L=0;
-              STEP++;
-            }
+        case 0:
+          L++;
+          if (L >= (LED_COUNT-1))
+          {
+            L=0;
+            STEP++;
+          }
 
-            for(i=0;i<=L;i++)
-            {        
-              strip.setPixelColor(i, colorRed, colorGreen, colorBlue);
-            }
+          for(i=0;i<=L;i++)
+          {        
+            strip.setPixelColor(i, colorRed, colorGreen, colorBlue);
+          }
           break;
-          case 1:
-            L++;
-            if (L >= (LED_COUNT-1))
-            {
-              L=0;
-              STEP++;
-            }
+        case 1:
+          L++;
+          if (L >= (LED_COUNT-1))
+          {
+            L=0;
+            STEP++;
+          }
 
-            for(i=0;i<=L;i++)
-            {        
-              strip.setPixelColor(i, 0, 0, 0);
-            }
+          for(i=0;i<=L;i++)
+          {        
+            strip.setPixelColor(i, 0, 0, 0);
+          }
           break;
         }
-        
+
         if (STEP>1)
         {
           STEP=0;
@@ -2930,11 +3033,6 @@ void loop()
         strip.show();
         break;
       case LedModeRandom:  
-        ledUpdateInterval += 500;
-        if(ledUpdateInterval > 2000)
-        {
-          ledUpdateInterval = 0;
-        }
         randr = random(256);    
         randg = random(256);    
         randb = random(256);    
@@ -2945,11 +3043,6 @@ void loop()
         strip.show();
         break;
       case LedModeRandom2:  
-        ledUpdateInterval += 100;
-        if(ledUpdateInterval > 300)
-        {
-          ledUpdateInterval = 100;
-        }
         x = random(LED_COUNT);
 
         for(i=0; i<strip.numPixels(); i++) 
@@ -2966,11 +3059,6 @@ void loop()
         strip.show();
         break;
       case LedModeRandomCycle:
-        ledUpdateInterval += 100;
-        if(ledUpdateInterval > 300)
-        {
-          ledUpdateInterval = 100;
-        }
         for(i=0; i<strip.numPixels(); i++) 
         {
           strip.setPixelColor(i, random(256), random(256), random(256));
@@ -2978,21 +3066,196 @@ void loop()
         strip.show();
         break;
       case LedModeRandomCycle2:
-        ledUpdateInterval += 100;
-        if(ledUpdateInterval > 300)
-        {
-          ledUpdateInterval = 100;
-        }
         for(i=strip.numPixels()-1; i>0; i--) 
         {
-         leds[i] = leds[i-1];
-         strip.setPixelColor(i, leds[i].r, leds[i].g, leds[i].b);
+          leds[i] = leds[i-1];
+          strip.setPixelColor(i, leds[i].r, leds[i].g, leds[i].b);
         }
         leds[0].r = random(256);
         leds[0].g = random(256);
         leds[0].b = random(256);
         strip.setPixelColor(0, leds[0].r, leds[0].g, leds[0].b);
         strip.show();
+        break;
+      case LedModeStrobe:
+        for(i=0; i<strip.numPixels(); i++) 
+        {
+          strip.setPixelColor(i, colorRed, colorGreen, colorBlue);
+        }
+        strip.show();
+        delay(5);
+        for(i=0; i<strip.numPixels(); i++) 
+        {
+          strip.setPixelColor(i, 0, 0, 0);
+        }
+        strip.show();
+        break;
+      case LedModeStrobeRandom:
+        randr = random(256);    
+        randg = random(256);    
+        randb = random(256);    
+        for(i=0; i<strip.numPixels(); i++) 
+        {
+          strip.setPixelColor(i, randr, randg, randb);
+        }
+        strip.show();
+        delay(5);
+        for(i=0; i<strip.numPixels(); i++) 
+        {
+          strip.setPixelColor(i, 0, 0, 0);
+        }
+        strip.show();
+        break;
+      case LedModeStrobeStep:
+        for(i=0; i<9; i++) 
+        {
+          strip.setPixelColor(STEP*9 + i, colorRed, colorGreen, colorBlue);
+        }
+        strip.show();
+        delay(5);
+        for(i=0; i<strip.numPixels(); i++) 
+        {
+          strip.setPixelColor(i, 0, 0, 0);
+        }
+        if (++STEP>5)
+        {
+          STEP=0;
+        }
+        strip.show();
+        break;
+      case LedModeStrobeStep2:
+        for(i=0; i<9; i++) 
+        {
+          strip.setPixelColor(STEP2*9 + i, colorRed, colorGreen, colorBlue);
+        }
+        strip.show();
+        delay(5);
+        for(i=0; i<strip.numPixels(); i++) 
+        {
+          strip.setPixelColor(i, 0, 0, 0);
+        }
+        if (STEP == 0)
+        { 
+          if(++STEP2 > 4)
+          {
+            STEP=1;
+          }
+        }
+        else if (STEP == 1)
+        { 
+          if(--STEP2 < 1)
+          {
+            STEP=0;
+          }
+        }
+        strip.show();
+        break;
+      case LedModeStrobeStepRandom:
+        STEP = random(7);
+        for(i=0; i<9; i++) 
+        {
+          strip.setPixelColor(STEP*9 + i, colorRed, colorGreen, colorBlue);
+        }
+        strip.show();
+        delay(5);
+        for(i=0; i<strip.numPixels(); i++) 
+        {
+          strip.setPixelColor(i, 0, 0, 0);
+        }
+        strip.show();
+        break;
+      case LedModeStrobeStepRandom2:
+        STEP = random(7);
+        randr = random(256);    
+        randg = random(256);    
+        randb = random(256);    
+
+        for(i=0; i<9; i++) 
+        {
+          strip.setPixelColor(STEP*9 + i, randr, randg, randb);
+        }
+        strip.show();
+        delay(5);
+        for(i=0; i<strip.numPixels(); i++) 
+        {
+          strip.setPixelColor(i, 0, 0, 0);
+        }
+        strip.show();
+        break;
+      case LedModeLarsonScanner:
+        for(i=0; i<strip.numPixels(); i++) 
+        {
+          strip.setPixelColor(i, 0, 0, 0);
+        }
+
+        strip.setPixelColor(L -10, (int)(colorRed * 10/100), (int)(colorGreen * 10/100), (int)(colorBlue * 10/100));
+        strip.setPixelColor(L - 9, (int)(colorRed * 30/100), (int)(colorGreen * 30/100), (int)(colorBlue * 30/100));
+        strip.setPixelColor(L - 8, (int)(colorRed * 50/100), (int)(colorGreen * 50/100), (int)(colorBlue * 50/100));
+        strip.setPixelColor(L - 7, (int)(colorRed * 70/100), (int)(colorGreen * 70/100), (int)(colorBlue * 70/100));
+        strip.setPixelColor(L - 6, (int)(colorRed * 90/100), (int)(colorGreen * 90/100), (int)(colorBlue * 90/100));
+        strip.setPixelColor(L - 5, colorRed,      colorGreen,      colorBlue);
+        strip.setPixelColor(L - 4, (int)(colorRed * 90/100), (int)(colorGreen * 90/100), (int)(colorBlue * 90/100));
+        strip.setPixelColor(L - 3, (int)(colorRed * 70/100), (int)(colorGreen * 70/100), (int)(colorBlue * 70/100));
+        strip.setPixelColor(L - 2, (int)(colorRed * 50/100), (int)(colorGreen * 50/100), (int)(colorBlue * 50/100));
+        strip.setPixelColor(L - 1, (int)(colorRed * 30/100), (int)(colorGreen * 30/100), (int)(colorBlue * 30/100));
+        strip.setPixelColor(L,     (int)(colorRed * 10/100), (int)(colorGreen * 10/100), (int)(colorBlue * 10/100));
+
+        if(STEP == 0)
+        {
+          if (++L > 55)
+          {
+            STEP = 1;
+          }
+        }
+        else if(STEP == 1)
+        {
+          if (--L < 0)
+          {
+            STEP = 0;
+          }
+        }
+        strip.show();
+        break;
+      case LedModeLarsonScannerRandom:
+        for(i=0; i<strip.numPixels(); i++) 
+        {
+          strip.setPixelColor(i, 0, 0, 0);
+        }
+
+        strip.setPixelColor(L -10, (int)(randr * 10/100), (int)(randg * 10/100), (int)(randb * 10/100));
+        strip.setPixelColor(L - 9, (int)(randr * 30/100), (int)(randg * 30/100), (int)(randb * 30/100));
+        strip.setPixelColor(L - 8, (int)(randr * 50/100), (int)(randg * 50/100), (int)(randb * 50/100));
+        strip.setPixelColor(L - 7, (int)(randr * 70/100), (int)(randg * 70/100), (int)(randb * 70/100));
+        strip.setPixelColor(L - 6, (int)(randr * 90/100), (int)(randg * 90/100), (int)(randb * 90/100));
+        strip.setPixelColor(L - 5, randr,      randg,      randb);
+        strip.setPixelColor(L - 4, (int)(randr * 90/100), (int)(randg * 90/100), (int)(randb * 90/100));
+        strip.setPixelColor(L - 3, (int)(randr * 70/100), (int)(randg * 70/100), (int)(randb * 70/100));
+        strip.setPixelColor(L - 2, (int)(randr * 50/100), (int)(randg * 50/100), (int)(randb * 50/100));
+        strip.setPixelColor(L - 1, (int)(randr * 30/100), (int)(randg * 30/100), (int)(randb * 30/100));
+        strip.setPixelColor(L,     (int)(randr * 10/100), (int)(randg * 10/100), (int)(randb * 10/100));
+
+        strip.show();
+
+        if(STEP == 0)
+        {
+          if (++L > 55)
+          {
+            randr = random(256);    
+            randg = random(256);    
+            randb = random(256);    
+            STEP = 1;
+          }
+        }
+        else if(STEP == 1)
+        {
+          if (--L < 0)
+          {
+            randr = random(256);    
+            randg = random(256);    
+            randb = random(256);    
+            STEP = 0;
+          }
+        }
         break;
       }
     }
@@ -3003,8 +3266,8 @@ void loop()
     checkPowerUsageTime = 0;
     double Irms = emon1.calcIrms(2000);  // Calculate Irms only
 
-    powerCurrent = Irms;
-    powerWatts   = Irms * 230.0;
+    floatPowerCurrent = Irms;
+    floatPowerWatts   = Irms * 230.0;
     updatePowerData();
   }
 
@@ -3016,7 +3279,6 @@ void loop()
       updateDebugWindow(DebugVariables, "");
     }
   }
-
   if (updateClockTime > updateClockInterval)
   {
     updateClockTime = 0;
@@ -3038,7 +3300,7 @@ void loop()
           turnFanOff();
           break;
         case TimeAlarmOptionFanMax:
-          fan_speed = 7;
+          intFanSpeed = 7;
           turnFanOn();
           setFanSpeed();
           break;
@@ -3052,17 +3314,82 @@ void loop()
     }
   }    
 
-  if (bBigClockShow)
+  if (updateBigClockTime > updateBigClockInterval)
   {
-    if (updateBigClockTime > updateBigClockInterval)
+    updateBigClockTime = 0;
+    if (bBigClockShow)
     {
-      updateBigClockTime = 0;
-      bBigClockShow = false;
+      showBigClock();
+    }
+    else if(screenSelected == BigClockScreen)
+    {
       setHomeScreen();
       bInitializeHomeScreen = true;
     }
   }
 
+  if (saveEEPROMTime > saveEEPROMInterval)
+  {
+    saveEEPROMTime = 0;
+
+    if (prev_bLedOn != bLedOn)
+    {
+      prev_bLedOn = bLedOn;
+      EEPROM.write(7, bLedOn?1:0);
+    }
+
+    if (prev_intLedMode != intLedMode)
+    {
+      prev_intLedMode = intLedMode;
+      EEPROM.write(8, intLedMode);
+    }
+    
+    if (prev_intLedSpeed != intLedSpeed)
+    {
+      prev_intLedSpeed = intLedSpeed;
+      EEPROM.write(9, intLedSpeed);
+    }
+
+    if (prev_colorRed != colorRed)
+    {
+      prev_colorRed = colorRed;
+      EEPROM.write(10, colorRed);
+    }
+
+    if (prev_colorGreen != colorGreen)
+    {
+      prev_colorGreen = colorGreen;
+      EEPROM.write(11, colorGreen);
+    }
+
+    if (prev_colorBlue != colorBlue)
+    {
+      prev_colorBlue = colorBlue;
+      EEPROM.write(12, colorBlue);
+    }
+  }
+  if (weatherUpdateTime >= weatherUpdateInterval)
+  {
+    weatherUpdateTime = 0;
+    updateWeatherData();
+  }
+
+  if (sendStatusTime > sendStatusInterval)
+  {
+    sendStatusTime = 0;
+  
+    // Send a message that the system has started.  Only after 10 seconds so that
+    // the ESP8266 module would have been initialized properly.
+    if (!bStarted)
+    {  
+      bStarted = true;
+      sendIntToESP8266("ArduinoStarting", 1);
+    }
+
+    sendAllStateToESP8266();
+  }
+
   delay(1);
 }
+
 
