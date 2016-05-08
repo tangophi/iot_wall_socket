@@ -19,8 +19,8 @@
 #define MQTT_USER			""
 #define MQTT_PASS			""
 
-#define STA_SSID "NiceMoose"
-#define STA_PASS "NetgearW"
+#define STA_SSID "yyyyy"
+#define STA_PASS "xxxxx"
 
 #define STA_TYPE AUTH_WPA2_PSK
 
