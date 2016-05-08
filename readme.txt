@@ -1,7 +1,7 @@
 This repo contains code for a Arduino/ESP8266 based IOT wall socket project.
 
 Details of the project can be found at:
-
+http://www.instructables.com/id/IoT-Wall-Outlet-with-Arduino-and-ESP8266/?ALLSTEPS
 
 iot_wall_socket_arduino contains the Arduino sketch for ATMEGA1284.  Use Arduino IDE to flash the code to the microcontroller.
 
